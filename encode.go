@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"reflect"
-	"sync"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -29,7 +28,14 @@ func MarshalAppend(bs []byte, v any, ord binary.AppendByteOrder) ([]byte, error)
 	return st.Out, nil
 }
 
-var encoderCache sync.Map
+var encoderCache = cache[fragments.EncoderFunc]{
+	OnRecursive: func(t reflect.Type) fragments.EncoderFunc {
+		err := unrepresentable(t, "recursive type")
+		return func(*fragments.Encoder, reflect.Value) error {
+			return err
+		}
+	},
+}
 
 const debugEncoders = false
 
@@ -51,18 +57,11 @@ var marshalerType = reflect.TypeFor[Marshaler]()
 func typeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 	debugEncoder("typeEncoder(%s)", t)
 	defer debugEncoder("end typeEncoder(%s)", t)
-	if cached, loaded := encoderCache.LoadOrStore(t, nil); loaded {
-		if cached == nil {
-			ret := newErrEncoder(unrepresentable(t, "recursive type"))
-			encoderCache.CompareAndSwap(t, nil, ret)
-			return ret
-		}
-		debugEncoder("%s{} (cached)", t)
-		return cached.(fragments.EncoderFunc)
+	if ret, found := encoderCache.Get(t); found {
+		return ret
 	}
-
 	defer func() {
-		encoderCache.CompareAndSwap(t, nil, ret)
+		encoderCache.Put(t, ret)
 	}()
 
 	if t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(marshalerType) {
