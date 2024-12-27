@@ -6,14 +6,17 @@ import (
 	"testing"
 
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/fragments"
 )
 
 type SelfMarshalerVal struct {
 	B byte
 }
 
-func (s SelfMarshalerVal) MarshalDBus(bs []byte, ord binary.AppendByteOrder) ([]byte, error) {
-	return ord.AppendUint16(bs, uint16(s.B)+1), nil
+func (s SelfMarshalerVal) MarshalDBus(st *fragments.Encoder) error {
+	st.Pad(3)
+	st.Uint16(uint16(s.B) + 1)
+	return nil
 }
 
 func (s SelfMarshalerVal) AlignDBus() int { return 3 }
@@ -24,8 +27,10 @@ type SelfMarshalerPtr struct {
 	b byte
 }
 
-func (s *SelfMarshalerPtr) MarshalDBus(bs []byte, ord binary.AppendByteOrder) ([]byte, error) {
-	return ord.AppendUint16(bs, uint16(s.b)+1), nil
+func (s *SelfMarshalerPtr) MarshalDBus(st *fragments.Encoder) error {
+	st.Pad(3)
+	st.Uint16(uint16(s.b) + 1)
+	return nil
 }
 
 func (s *SelfMarshalerPtr) AlignDBus() int { return 3 }
