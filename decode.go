@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"reflect"
-	"sync"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -22,18 +21,13 @@ func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
 	if val.IsNil() {
 		return fmt.Errorf("can't unmarshal into nil pointer")
 	}
-	dec, err := typeDecoder(val.Elem().Type())
-	if err != nil {
-		return err
-	}
+	dec := decoders.GetRecover(val.Elem().Type())
 	st := fragments.Decoder{
 		Order: ord,
 		In:    bs,
 	}
 	return dec(&st, val.Elem())
 }
-
-var decoderCache sync.Map
 
 const debugDecoders = false
 
@@ -44,51 +38,38 @@ func debugDecoder(msg string, args ...any) {
 	log.Printf(msg, args...)
 }
 
-func typeDecoder(t reflect.Type) (ret fragments.DecoderFunc, err error) {
+var decoders cache[fragments.DecoderFunc]
+
+func init() {
+	// This needs to be an init func to break the initialization cycle
+	// between the cache and the calls to the cache within
+	// uncachedTypeEncoder.
+	decoders.Init(uncachedTypeDecoder, func(t reflect.Type) fragments.DecoderFunc {
+		return newErrDecoder(t, "recursive type")
+	})
+}
+
+func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("typeDecoder(%s)", t)
 	defer debugDecoder("end typeDecoder(%s)", t)
-	if cached, loaded := decoderCache.LoadOrStore(t, nil); loaded {
-		if cached == nil {
-			err := unrepresentable(t, "recursive type")
-			decoderCache.CompareAndSwap(t, nil, err)
-			return nil, err
-		}
-		if err, ok := cached.(error); ok {
-			return nil, err
-		}
-		debugDecoder("%s{} (cached)", t)
-		return cached.(fragments.DecoderFunc), nil
-	}
-
-	defer func() {
-		if err != nil {
-			decoderCache.CompareAndSwap(t, nil, err)
-		} else {
-			decoderCache.CompareAndSwap(t, nil, ret)
-		}
-	}()
 
 	// TODO: pointer marshaler optimization thing?
 
-	return deriveTypeDecoder(t)
-}
-
-func deriveTypeDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	switch t.Kind() {
 	case reflect.Pointer:
 		return newPtrDecoder(t)
 	case reflect.Bool:
-		return newBoolDecoder(), nil
+		return newBoolDecoder()
 	case reflect.Int, reflect.Uint:
-		return nil, unrepresentable(t, "int and uint aren't portable, use fixed width integers")
+		return newErrDecoder(t, "int and uint aren't portable, use fixed width integers")
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return newIntDecoder(t), nil
+		return newIntDecoder(t)
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return newUintDecoder(t), nil
+		return newUintDecoder(t)
 	case reflect.Float32, reflect.Float64:
-		return newFloatDecoder(), nil
+		return newFloatDecoder()
 	case reflect.String:
-		return newStringDecoder(), nil
+		return newStringDecoder()
 	case reflect.Slice, reflect.Array:
 		return newSliceDecoder(t)
 	case reflect.Struct:
@@ -97,16 +78,25 @@ func deriveTypeDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 		return newMapDecoder(t)
 	}
 
-	return nil, unrepresentable(t, "no known mapping")
+	return newErrDecoder(t, "no known mapping")
 }
 
-func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
+	err := unrepresentable(t, reason)
+	decoders.Unwind(func(*fragments.Decoder, reflect.Value) error {
+		return err
+	})
+	// So that callers can return the result of this constructor and
+	// pretend that it's not doing any non-local return. The non-local
+	// return is just an optimization so that decoders don't waste
+	// time partially decoding types that will never fully succeed.
+	return nil
+}
+
+func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("ptr{%s}", t.Elem())
 	elem := t.Elem()
-	elemDec, err := typeDecoder(elem)
-	if err != nil {
-		return nil, err
-	}
+	elemDec := decoders.Get(elem)
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			elem := reflect.New(elem)
@@ -118,7 +108,7 @@ func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 			return err
 		}
 		return nil
-	}, nil
+	}
 }
 
 func newBoolDecoder() fragments.DecoderFunc {
@@ -267,7 +257,7 @@ func newStringDecoder() fragments.DecoderFunc {
 	}
 }
 
-func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	if t.Elem().Kind() == reflect.Uint8 {
 		debugDecoder("[]byte{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
@@ -282,14 +272,11 @@ func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 			}
 			v.SetBytes(ret)
 			return nil
-		}, nil
+		}
 	}
 
 	debugDecoder("[]%s{}", t.Elem())
-	elemDec, err := typeDecoder(t.Elem())
-	if err != nil {
-		return nil, err
-	}
+	elemDec := decoders.Get(t.Elem())
 
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
@@ -307,7 +294,7 @@ func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 			}
 		}
 		return nil
-	}, nil
+	}
 }
 
 type structFieldDecoder struct {
@@ -337,7 +324,7 @@ func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
 	return nil
 }
 
-func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("%s{}", t)
 	ret := structDecoder{}
 	for _, f := range reflect.VisibleFields(t) {
@@ -345,10 +332,7 @@ func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 			continue
 		}
 		debugDecoder("%s.%s{%s}", t, f.Name, f.Type)
-		fDec, err := typeDecoder(f.Type)
-		if err != nil {
-			return nil, err
-		}
+		fDec := decoders.Get(f.Type)
 		fd := structFieldDecoder{
 			idx: allocSteps(t, f.Index),
 			dec: fDec,
@@ -357,9 +341,9 @@ func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 		ret = append(ret, fd)
 	}
 	if len(ret) == 0 {
-		return nil, unrepresentable(t, "no exported struct fields")
+		return newErrDecoder(t, "no exported struct fields")
 	}
-	return ret.decode, nil
+	return ret.decode
 }
 
 // allocSteps partitions a multi-hop traversal of struct fields into
@@ -386,23 +370,17 @@ func allocSteps(t reflect.Type, idx []int) [][]int {
 	return ret
 }
 
-func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("map[%s]%s{}", t.Key(), t.Elem())
 	kt := t.Key()
 	switch kt.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.String:
 	default:
-		return nil, unrepresentable(t, fmt.Sprintf("unrepresentable map key type %s", kt))
+		return newErrDecoder(t, fmt.Sprintf("invalid map key type %s", kt))
 	}
-	kDec, err := typeDecoder(kt)
-	if err != nil {
-		return nil, err
-	}
+	kDec := decoders.Get(kt)
 	vt := t.Elem()
-	vDec, err := typeDecoder(vt)
-	if err != nil {
-		return nil, err
-	}
+	vDec := decoders.Get(vt)
 
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
@@ -432,5 +410,5 @@ func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 			v.SetMapIndex(key.Elem(), val.Elem())
 		}
 		return nil
-	}, nil
+	}
 }
