@@ -3,11 +3,12 @@ package dbus
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"reflect"
 	"sync"
+
+	"github.com/danderson/dbus/fragments"
 )
 
 func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
@@ -25,83 +26,14 @@ func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
 	if err != nil {
 		return err
 	}
-	st := decodeState{ord, 0, bs}
+	st := fragments.Decoder{
+		Order: ord,
+		In:    bs,
+	}
 	return dec(&st, val.Elem())
 }
 
-type decodeState struct {
-	ord    binary.ByteOrder
-	offset int
-	raw    []byte
-}
-
-func (d *decodeState) advance(n int) {
-	d.offset += n
-	d.raw = d.raw[n:]
-}
-
-func (d *decodeState) Pad(align int) {
-	extra := d.offset % align
-	if extra == 0 {
-		return
-	}
-	d.advance(align - extra)
-}
-
-func (d *decodeState) Bytes(n int) ([]byte, error) {
-	if len(d.raw) < n {
-		return nil, io.ErrUnexpectedEOF
-	}
-	ret := d.raw[:n]
-	d.advance(n)
-	return ret, nil
-}
-
-func (d *decodeState) String(n int) (string, error) {
-	bs, err := d.Bytes(n)
-	if err != nil {
-		return "", err
-	}
-	return string(bs), nil
-}
-
-func (d *decodeState) UnmarshalUint8() (uint8, error) {
-	if len(d.raw) < 1 {
-		return 0, io.ErrUnexpectedEOF
-	}
-	ret := d.raw[0]
-	d.advance(1)
-	return ret, nil
-}
-
-func (d *decodeState) UnmarshalUint16() (uint16, error) {
-	if len(d.raw) < 2 {
-		return 0, io.ErrUnexpectedEOF
-	}
-	ret := d.ord.Uint16(d.raw)
-	d.advance(2)
-	return ret, nil
-}
-
-func (d *decodeState) UnmarshalUint32() (uint32, error) {
-	if len(d.raw) < 4 {
-		return 0, io.ErrUnexpectedEOF
-	}
-	ret := d.ord.Uint32(d.raw)
-	d.advance(4)
-	return ret, nil
-}
-
-func (d *decodeState) UnmarshalUint64() (uint64, error) {
-	if len(d.raw) < 8 {
-		return 0, io.ErrUnexpectedEOF
-	}
-	ret := d.ord.Uint64(d.raw)
-	d.advance(8)
-	return ret, nil
-}
-
-type decoderFunc func(*decodeState, reflect.Value) error
+type decoderFunc func(*fragments.Decoder, reflect.Value) error
 
 var decoderCache sync.Map
 
@@ -177,7 +109,7 @@ func newPtrDecoder(t reflect.Type) (decoderFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	return func(st *decodeState, v reflect.Value) error {
+	return func(st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			elem := reflect.New(elem)
 			if err := elemDec(st, elem.Elem()); err != nil {
@@ -193,9 +125,9 @@ func newPtrDecoder(t reflect.Type) (decoderFunc, error) {
 
 func newBoolDecoder() decoderFunc {
 	debugDecoder("bool{}")
-	return func(st *decodeState, v reflect.Value) error {
+	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
-		u, err := st.UnmarshalUint32()
+		u, err := st.Uint32()
 		if err != nil {
 			return err
 		}
@@ -208,8 +140,8 @@ func newIntDecoder(t reflect.Type) decoderFunc {
 	switch t.Size() {
 	case 1:
 		debugDecoder("int8{}")
-		return func(st *decodeState, v reflect.Value) error {
-			u8, err := st.UnmarshalUint8()
+		return func(st *fragments.Decoder, v reflect.Value) error {
+			u8, err := st.Uint8()
 			if err != nil {
 				return err
 			}
@@ -218,9 +150,9 @@ func newIntDecoder(t reflect.Type) decoderFunc {
 		}
 	case 2:
 		debugDecoder("int16{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(2)
-			u16, err := st.UnmarshalUint16()
+			u16, err := st.Uint16()
 			if err != nil {
 				return err
 			}
@@ -229,9 +161,9 @@ func newIntDecoder(t reflect.Type) decoderFunc {
 		}
 	case 4:
 		debugDecoder("int32{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(4)
-			u32, err := st.UnmarshalUint32()
+			u32, err := st.Uint32()
 			if err != nil {
 				return err
 			}
@@ -240,9 +172,9 @@ func newIntDecoder(t reflect.Type) decoderFunc {
 		}
 	case 8:
 		debugDecoder("int64{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(8)
-			u64, err := st.UnmarshalUint64()
+			u64, err := st.Uint64()
 			if err != nil {
 				return err
 			}
@@ -258,8 +190,8 @@ func newUintDecoder(t reflect.Type) decoderFunc {
 	switch t.Size() {
 	case 1:
 		debugDecoder("uint8{}")
-		return func(st *decodeState, v reflect.Value) error {
-			u8, err := st.UnmarshalUint8()
+		return func(st *fragments.Decoder, v reflect.Value) error {
+			u8, err := st.Uint8()
 			if err != nil {
 				return err
 			}
@@ -268,9 +200,9 @@ func newUintDecoder(t reflect.Type) decoderFunc {
 		}
 	case 2:
 		debugDecoder("uint16{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(2)
-			u16, err := st.UnmarshalUint16()
+			u16, err := st.Uint16()
 			if err != nil {
 				return err
 			}
@@ -279,9 +211,9 @@ func newUintDecoder(t reflect.Type) decoderFunc {
 		}
 	case 4:
 		debugDecoder("uint32{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(4)
-			u32, err := st.UnmarshalUint32()
+			u32, err := st.Uint32()
 			if err != nil {
 				return err
 			}
@@ -290,9 +222,9 @@ func newUintDecoder(t reflect.Type) decoderFunc {
 		}
 	case 8:
 		debugDecoder("uint64{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(8)
-			u64, err := st.UnmarshalUint64()
+			u64, err := st.Uint64()
 			if err != nil {
 				return err
 			}
@@ -306,9 +238,9 @@ func newUintDecoder(t reflect.Type) decoderFunc {
 
 func newFloatDecoder() decoderFunc {
 	debugDecoder("float64{}")
-	return func(st *decodeState, v reflect.Value) error {
+	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(8)
-		u64, err := st.UnmarshalUint64()
+		u64, err := st.Uint64()
 		if err != nil {
 			return err
 		}
@@ -319,9 +251,9 @@ func newFloatDecoder() decoderFunc {
 
 func newStringDecoder() decoderFunc {
 	debugDecoder("string{}")
-	return func(st *decodeState, v reflect.Value) error {
+	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
-		u32, err := st.UnmarshalUint32()
+		u32, err := st.Uint32()
 		if err != nil {
 			return err
 		}
@@ -329,7 +261,7 @@ func newStringDecoder() decoderFunc {
 		if err != nil {
 			return err
 		}
-		if _, err := st.UnmarshalUint8(); err != nil {
+		if _, err := st.Uint8(); err != nil {
 			return err
 		}
 		v.SetString(ret)
@@ -340,9 +272,9 @@ func newStringDecoder() decoderFunc {
 func newSliceDecoder(t reflect.Type) (decoderFunc, error) {
 	if t.Elem().Kind() == reflect.Uint8 {
 		debugDecoder("[]byte{}")
-		return func(st *decodeState, v reflect.Value) error {
+		return func(st *fragments.Decoder, v reflect.Value) error {
 			st.Pad(4)
-			u32, err := st.UnmarshalUint32()
+			u32, err := st.Uint32()
 			if err != nil {
 				return err
 			}
@@ -361,9 +293,9 @@ func newSliceDecoder(t reflect.Type) (decoderFunc, error) {
 		return nil, err
 	}
 
-	return func(st *decodeState, v reflect.Value) error {
+	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
-		u32, err := st.UnmarshalUint32()
+		u32, err := st.Uint32()
 		if err != nil {
 			return err
 		}
@@ -387,7 +319,7 @@ type structFieldDecoder struct {
 
 type structDecoder []structFieldDecoder
 
-func (fs structDecoder) decode(st *decodeState, v reflect.Value) error {
+func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
 	st.Pad(8)
 	for _, f := range fs {
 		fv := v
@@ -474,9 +406,9 @@ func newMapDecoder(t reflect.Type) (decoderFunc, error) {
 		return nil, err
 	}
 
-	return func(st *decodeState, v reflect.Value) error {
+	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
-		u32, err := st.UnmarshalUint32()
+		u32, err := st.Uint32()
 		if err != nil {
 			return err
 		}
