@@ -33,8 +33,6 @@ func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
 	return dec(&st, val.Elem())
 }
 
-type decoderFunc func(*fragments.Decoder, reflect.Value) error
-
 var decoderCache sync.Map
 
 const debugDecoders = false
@@ -46,7 +44,7 @@ func debugDecoder(msg string, args ...any) {
 	log.Printf(msg, args...)
 }
 
-func typeDecoder(t reflect.Type) (ret decoderFunc, err error) {
+func typeDecoder(t reflect.Type) (ret fragments.DecoderFunc, err error) {
 	debugDecoder("typeDecoder(%s)", t)
 	defer debugDecoder("end typeDecoder(%s)", t)
 	if cached, loaded := decoderCache.LoadOrStore(t, nil); loaded {
@@ -59,7 +57,7 @@ func typeDecoder(t reflect.Type) (ret decoderFunc, err error) {
 			return nil, err
 		}
 		debugDecoder("%s{} (cached)", t)
-		return cached.(decoderFunc), nil
+		return cached.(fragments.DecoderFunc), nil
 	}
 
 	defer func() {
@@ -75,7 +73,7 @@ func typeDecoder(t reflect.Type) (ret decoderFunc, err error) {
 	return deriveTypeDecoder(t)
 }
 
-func deriveTypeDecoder(t reflect.Type) (decoderFunc, error) {
+func deriveTypeDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	switch t.Kind() {
 	case reflect.Pointer:
 		return newPtrDecoder(t)
@@ -102,7 +100,7 @@ func deriveTypeDecoder(t reflect.Type) (decoderFunc, error) {
 	return nil, unrepresentable(t, "no known mapping")
 }
 
-func newPtrDecoder(t reflect.Type) (decoderFunc, error) {
+func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	debugDecoder("ptr{%s}", t.Elem())
 	elem := t.Elem()
 	elemDec, err := typeDecoder(elem)
@@ -123,7 +121,7 @@ func newPtrDecoder(t reflect.Type) (decoderFunc, error) {
 	}, nil
 }
 
-func newBoolDecoder() decoderFunc {
+func newBoolDecoder() fragments.DecoderFunc {
 	debugDecoder("bool{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
@@ -136,7 +134,7 @@ func newBoolDecoder() decoderFunc {
 	}
 }
 
-func newIntDecoder(t reflect.Type) decoderFunc {
+func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
 		debugDecoder("int8{}")
@@ -186,7 +184,7 @@ func newIntDecoder(t reflect.Type) decoderFunc {
 	}
 }
 
-func newUintDecoder(t reflect.Type) decoderFunc {
+func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
 		debugDecoder("uint8{}")
@@ -236,7 +234,7 @@ func newUintDecoder(t reflect.Type) decoderFunc {
 	}
 }
 
-func newFloatDecoder() decoderFunc {
+func newFloatDecoder() fragments.DecoderFunc {
 	debugDecoder("float64{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(8)
@@ -249,7 +247,7 @@ func newFloatDecoder() decoderFunc {
 	}
 }
 
-func newStringDecoder() decoderFunc {
+func newStringDecoder() fragments.DecoderFunc {
 	debugDecoder("string{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		st.Pad(4)
@@ -269,7 +267,7 @@ func newStringDecoder() decoderFunc {
 	}
 }
 
-func newSliceDecoder(t reflect.Type) (decoderFunc, error) {
+func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	if t.Elem().Kind() == reflect.Uint8 {
 		debugDecoder("[]byte{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
@@ -314,7 +312,7 @@ func newSliceDecoder(t reflect.Type) (decoderFunc, error) {
 
 type structFieldDecoder struct {
 	idx [][]int
-	dec decoderFunc
+	dec fragments.DecoderFunc
 }
 
 type structDecoder []structFieldDecoder
@@ -339,7 +337,7 @@ func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
 	return nil
 }
 
-func newStructDecoder(t reflect.Type) (decoderFunc, error) {
+func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	debugDecoder("%s{}", t)
 	ret := structDecoder{}
 	for _, f := range reflect.VisibleFields(t) {
@@ -388,7 +386,7 @@ func allocSteps(t reflect.Type, idx []int) [][]int {
 	return ret
 }
 
-func newMapDecoder(t reflect.Type) (decoderFunc, error) {
+func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	debugDecoder("map[%s]%s{}", t.Key(), t.Elem())
 	kt := t.Key()
 	switch kt.Kind() {
