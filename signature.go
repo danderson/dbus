@@ -1,24 +1,25 @@
 package dbus
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log"
 	"reflect"
 	"strings"
 	"sync"
+
+	"github.com/danderson/dbus/fragments"
 )
 
 type Signature string
 
-func (s Signature) MarshalDBus(bs []byte, ord binary.AppendByteOrder) ([]byte, error) {
+func (s Signature) MarshalDBus(st *fragments.Encoder) error {
 	if len(s) > 255 {
-		return nil, fmt.Errorf("signature exceeds maximum length of 255 bytes")
+		return fmt.Errorf("signature exceeds maximum length of 255 bytes")
 	}
-	bs = append(bs, byte(len(s)))
-	bs = append(bs, s...)
-	bs = append(bs, 0)
-	return bs, nil
+	st.Uint8(uint8(len(s)))
+	st.String(string(s))
+	st.Uint8(0)
+	return nil
 }
 
 func (s Signature) AlignDBus() int           { return 1 }

@@ -1,8 +1,9 @@
 package dbus
 
 import (
-	"encoding/binary"
 	"reflect"
+
+	"github.com/danderson/dbus/fragments"
 )
 
 type Variant struct {
@@ -11,16 +12,18 @@ type Variant struct {
 
 var variantType = reflect.TypeFor[Variant]()
 
-func (v Variant) MarshalDBus(bs []byte, ord binary.AppendByteOrder) ([]byte, error) {
+func (v Variant) MarshalDBus(st *fragments.Encoder) error {
 	sig, err := SignatureOf(v.Value)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	bs, err = MarshalAppend(bs, sig, ord)
-	if err != nil {
-		return nil, err
+	if err := st.Value(sig); err != nil {
+		return err
 	}
-	return MarshalAppend(bs, v.Value, ord)
+	if err := st.Value(v.Value); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (v Variant) AlignDBus() int           { return 1 }
