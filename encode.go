@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"reflect"
-	"sync"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -17,10 +16,10 @@ func Marshal(v any, ord binary.AppendByteOrder) ([]byte, error) {
 
 func MarshalAppend(bs []byte, v any, ord binary.AppendByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
-	enc := typeEncoder(val.Type())
+	enc := encoders.GetRecover(val.Type())
 	st := fragments.Encoder{
 		Order:  ord,
-		Mapper: typeEncoder,
+		Mapper: encoders.Get,
 		Out:    bs,
 	}
 	if err := enc(&st, val); err != nil {
@@ -28,8 +27,6 @@ func MarshalAppend(bs []byte, v any, ord binary.AppendByteOrder) ([]byte, error)
 	}
 	return st.Out, nil
 }
-
-var encoderCache sync.Map
 
 const debugEncoders = false
 
@@ -48,40 +45,34 @@ type Marshaler interface {
 
 var marshalerType = reflect.TypeFor[Marshaler]()
 
-func typeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
+var encoders cache[fragments.EncoderFunc]
+
+func init() {
+	// This needs to be an init func to break the initialization cycle
+	// between the cache and the calls to the cache within
+	// uncachedTypeEncoder.
+	encoders.Init(uncachedTypeEncoder, func(t reflect.Type) fragments.EncoderFunc {
+		return newErrEncoder(t, "recursive type")
+	})
+}
+
+func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 	debugEncoder("typeEncoder(%s)", t)
 	defer debugEncoder("end typeEncoder(%s)", t)
-	if cached, loaded := encoderCache.LoadOrStore(t, nil); loaded {
-		if cached == nil {
-			ret := newErrEncoder(unrepresentable(t, "recursive type"))
-			encoderCache.CompareAndSwap(t, nil, ret)
-			return ret
-		}
-		debugEncoder("%s{} (cached)", t)
-		return cached.(fragments.EncoderFunc)
-	}
-
-	defer func() {
-		encoderCache.CompareAndSwap(t, nil, ret)
-	}()
 
 	if t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(marshalerType) {
 		return newCondAddrMarshalEncoder(t)
-	}
-	return deriveTypeEncoder(t)
-}
-
-func deriveTypeEncoder(t reflect.Type) fragments.EncoderFunc {
-	if t.Implements(marshalerType) {
+	} else if t.Implements(marshalerType) {
 		return newMarshalEncoder(t)
 	}
+
 	switch t.Kind() {
 	case reflect.Pointer:
 		return newPtrEncoder(t)
 	case reflect.Bool:
 		return newBoolEncoder()
 	case reflect.Int, reflect.Uint:
-		return newErrEncoder(unrepresentable(t, "int and uint aren't portable, use fixed width integers"))
+		return newErrEncoder(t, "int and uint aren't portable, use fixed width integers")
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return newIntEncoder(t)
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -97,31 +88,42 @@ func deriveTypeEncoder(t reflect.Type) fragments.EncoderFunc {
 	case reflect.Map:
 		return newMapEncoder(t)
 	}
-	return newErrEncoder(unrepresentable(t, "no known mapping"))
+	return newErrEncoder(t, "no known mapping")
 }
 
 func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
-	var val fragments.EncoderFunc
+	ptr := newMarshalEncoder(reflect.PointerTo(t))
 	if t.Implements(marshalerType) {
 		debugEncoder("%s{} (external marshaler, w/ addressable optimization)", t)
-		val = newMarshalEncoder(t)
+		val := newMarshalEncoder(t)
+		return func(st *fragments.Encoder, v reflect.Value) error {
+			if v.CanAddr() {
+				return ptr(st, v.Addr())
+			} else {
+				return val(st, v)
+			}
+		}
 	} else {
 		debugEncoder("%s{} (external marshaler, addressable only)", t)
-		val = newErrEncoder(unrepresentable(t, "Marshaler only implemented on pointer receiver, and cannot take address of value"))
-	}
-	ptr := newMarshalEncoder(reflect.PointerTo(t))
-
-	return func(st *fragments.Encoder, v reflect.Value) error {
-		if v.CanAddr() {
+		return func(st *fragments.Encoder, v reflect.Value) error {
+			if !v.CanAddr() {
+				return unrepresentable(t, "Marshaler only implemented on pointer receiver, and cannot take address of value")
+			}
 			return ptr(st, v.Addr())
-		} else {
-			return val(st, v)
 		}
 	}
 }
 
-func newErrEncoder(err error) fragments.EncoderFunc {
-	return func(st *fragments.Encoder, v reflect.Value) error { return err }
+func newErrEncoder(t reflect.Type, reason string) fragments.EncoderFunc {
+	err := unrepresentable(t, reason)
+	encoders.Unwind(func(*fragments.Encoder, reflect.Value) error {
+		return err
+	})
+	// So that callers can return the result of this constructor and
+	// pretend that it's not doing any non-local return. The non-local
+	// return is just an optimization so that encoders don't waste
+	// time partially encoding types that will never fully succeed.
+	return nil
 }
 
 func newMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
@@ -135,7 +137,7 @@ func newMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 
 func newPtrEncoder(t reflect.Type) fragments.EncoderFunc {
 	debugEncoder("ptr{%s}", t.Elem())
-	elemEnc := typeEncoder(t.Elem())
+	elemEnc := encoders.Get(t.Elem())
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		if v.IsNil() {
 			return elemEnc(st, reflect.Zero(t))
@@ -259,7 +261,7 @@ func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 
 	debugEncoder("[]%s{}", t.Elem())
-	elemEnc := typeEncoder(t.Elem())
+	elemEnc := encoders.Get(t.Elem())
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		ln := v.Len()
@@ -323,11 +325,11 @@ func newStructEncoder(t reflect.Type) fragments.EncoderFunc {
 			continue
 		}
 		debugEncoder("%s.%s{%s}", t, f.Name, f.Type)
-		fEnc := typeEncoder(f.Type)
+		fEnc := encoders.Get(f.Type)
 		ret = append(ret, structFieldEncoder{f.Index, fEnc})
 	}
 	if len(ret) == 0 {
-		return newErrEncoder(unrepresentable(t, "no exported struct fields"))
+		return newErrEncoder(t, "no exported struct fields")
 	}
 	return ret.encode
 }
@@ -338,11 +340,11 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch kt.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.String:
 	default:
-		return newErrEncoder(unrepresentable(t, fmt.Sprintf("unrepresentable map key type %s", kt)))
+		return newErrEncoder(t, fmt.Sprintf("unrepresentable map key type %s", kt))
 	}
-	kEnc := typeEncoder(kt)
+	kEnc := encoders.Get(kt)
 	vt := t.Elem()
-	vEnc := typeEncoder(vt)
+	vEnc := encoders.Get(vt)
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		ln := v.Len()
