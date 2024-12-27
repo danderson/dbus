@@ -21,6 +21,16 @@ func (s Signature) MarshalDBus(st *fragments.Encoder) error {
 	return nil
 }
 
+func (s *Signature) UnmarshalDBus(st *fragments.Decoder) error {
+	u8, err := st.Uint8()
+	if err != nil {
+		return err
+	}
+	str, err := st.String(int(u8))
+	*s = Signature(str)
+	return nil
+}
+
 func (s Signature) AlignDBus() int           { return 1 }
 func (s Signature) SignatureDBus() Signature { return "g" }
 

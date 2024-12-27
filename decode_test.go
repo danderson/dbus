@@ -37,9 +37,17 @@ func TestTypeDecoder(t *testing.T) {
 		*Embedded_PV
 		D byte
 	}
+	type NestedSelfMashalerVal struct {
+		A byte
+		B SelfMarshalerVal
+	}
 	type NestedSelfMarshalerPtr struct {
 		A byte
 		B SelfMarshalerPtr
+	}
+	type NestedSelfMarshalerPtrPtr struct {
+		A byte
+		B *SelfMarshalerPtr
 	}
 
 	type testCase struct {
@@ -55,28 +63,39 @@ func TestTypeDecoder(t *testing.T) {
 	}
 	tests := []testCase{
 		ok([]byte{0x00, 0x00, 0x00, 0x01}, ptr(true)),
+
 		ok([]byte{0x42}, ptr(int8(0x42))),
+
 		ok([]byte{0x42}, ptr(uint8(0x42))),
+
 		ok([]byte{0x41, 0x42}, ptr(int16(0x4142))),
+
 		ok([]byte{0x41, 0x42}, ptr(uint16(0x4142))),
+
 		ok([]byte{0x39, 0x40, 0x41, 0x42}, ptr(int32(0x39404142))),
+
 		ok([]byte{0x39, 0x40, 0x41, 0x42}, ptr(uint32(0x39404142))),
+
 		ok([]byte{
 			0x35, 0x36, 0x37, 0x38,
 			0x39, 0x40, 0x41, 0x42},
 			ptr(int64(0x3536373839404142))),
+
 		ok([]byte{
 			0x35, 0x36, 0x37, 0x38,
 			0x39, 0x40, 0x41, 0x42},
 			ptr(uint64(0x3536373839404142))),
+
 		ok([]byte{
 			0x41, 0xE9, 0x5A, 0x5F,
 			0x02, 0x80, 0x00, 0x00},
 			ptr(float32(3402823700))),
+
 		ok([]byte{
 			0x41, 0xE9, 0x5A, 0x5F,
 			0x02, 0x80, 0x00, 0x00},
 			ptr(float64(3402823700))),
+
 		ok([]byte{
 			// Length
 			0x00, 0x00, 0x00, 0x03,
@@ -85,11 +104,13 @@ func TestTypeDecoder(t *testing.T) {
 			// Terminator
 			0x00,
 		}, ptr("foo")),
+
 		ok([]byte{
 			0x00, 0x00, 0x00, 0x02,
 			0x00, 0x01,
 			0x00, 0x02},
 			ptr([]uint16{1, 2})),
+
 		ok([]byte{
 			0x00, 0x00, 0x00, 0x02,
 			0x00, 0x00, 0x00, 0x01,
@@ -99,6 +120,7 @@ func TestTypeDecoder(t *testing.T) {
 			0x00, 0x02,
 			0x00, 0x03},
 			ptr([][]uint16{{1}, {2, 3}})),
+
 		ok([]byte{
 			0x00, 0x2a,
 			0x00, 0x00, // padding
@@ -112,24 +134,28 @@ func TestTypeDecoder(t *testing.T) {
 			0x00, 0x00, // padding
 			0x00, 0x00, 0x00, 0x01},
 			ptr(Nested{66, Simple{42, true}})),
+
 		ok([]byte{
 			0x00, 0x2a,
 			0x00, 0x00, // padding
 			0x00, 0x00, 0x00, 0x01,
 			0x42},
 			ptr(Embedded{Simple{42, true}, 66})),
+
 		ok([]byte{
 			0x00, 0x2a,
 			0x00, 0x00, // padding
 			0x00, 0x00, 0x00, 0x01,
 			0x42},
 			ptr(Embedded_P{&Simple{42, true}, 66})),
+
 		ok([]byte{
 			0x00, 0x2a,
 			0x00, 0x00, // padding
 			0x00, 0x00, 0x00, 0x01,
 			0x42},
 			ptr(Embedded_PV{Embedded_P{&Simple{42, true}, 66}})),
+
 		ok([]byte{
 			0x00, 0x2a,
 			0x00, 0x00, // padding
@@ -141,6 +167,19 @@ func TestTypeDecoder(t *testing.T) {
 			0x00, 0x2a,
 			0x42},
 			ptr(EmbeddedShadow{Simple{42, false}, 66})),
+
+		ok([]byte{
+			0x2a,
+			0x00, 0x00,
+			0x00, 0x2a,
+		}, ptr(NestedSelfMarshalerPtr{42, SelfMarshalerPtr{41}})),
+
+		ok([]byte{
+			0x2a,
+			0x00, 0x00,
+			0x00, 0x2a,
+		}, ptr(NestedSelfMarshalerPtrPtr{42, &SelfMarshalerPtr{41}})),
+
 		ok([]byte{
 			0x00, 0x00, 0x00, 0x02, // dict len
 
@@ -152,6 +191,7 @@ func TestTypeDecoder(t *testing.T) {
 			0x00, 0x03, // key=3
 			0x04, // val=4
 		}, ptr(map[uint16]uint8{1: 2, 3: 4})),
+
 		ok([]byte{
 			0x00, 0x00, 0x00, 0x02, // dict len
 
@@ -167,7 +207,15 @@ func TestTypeDecoder(t *testing.T) {
 			3: ptr[uint8](4),
 		})),
 
+		ok([]byte{0x00, 0x2a}, ptr(SelfMarshalerPtr{41})),
+
 		fail(nil, nil),
+		fail([]byte{0x00, 0x2a}, ptr(SelfMarshalerVal{})),
+		fail([]byte{
+			0x2a,
+			0x00, 0x00,
+			0x00, 0x2a},
+			ptr(NestedSelfMashalerVal{0, SelfMarshalerVal{0}})),
 	}
 
 	for _, tc := range tests {

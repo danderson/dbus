@@ -19,17 +19,37 @@ func (s SelfMarshalerVal) MarshalDBus(st *fragments.Encoder) error {
 	return nil
 }
 
+func (s SelfMarshalerVal) UnmarshalDBus(st *fragments.Decoder) error {
+	st.Pad(3)
+	u16, err := st.Uint16()
+	if err != nil {
+		return err
+	}
+	s.B = byte(u16) - 1
+	return nil
+}
+
 func (s SelfMarshalerVal) AlignDBus() int { return 3 }
 
 func (s SelfMarshalerVal) SignatureDBus() dbus.Signature { return "q" }
 
 type SelfMarshalerPtr struct {
-	b byte
+	B byte
 }
 
 func (s *SelfMarshalerPtr) MarshalDBus(st *fragments.Encoder) error {
 	st.Pad(3)
-	st.Uint16(uint16(s.b) + 1)
+	st.Uint16(uint16(s.B) + 1)
+	return nil
+}
+
+func (s *SelfMarshalerPtr) UnmarshalDBus(st *fragments.Decoder) error {
+	st.Pad(3)
+	u16, err := st.Uint16()
+	if err != nil {
+		return err
+	}
+	s.B = byte(u16) - 1
 	return nil
 }
 
@@ -288,6 +308,27 @@ func TestTypeEncoder(t *testing.T) {
 			// pad to multiple of 3
 			0x00,
 			0x03, 0x00,
+		}},
+
+		{dbus.ObjectPath("foo"), be, []byte{
+			0x00, 0x00, 0x00, 0x03, // length
+			0x66, 0x6f, 0x6f, // "foo"
+			0x00, // terminator
+		}},
+		{dbus.ObjectPath("foo"), le, []byte{
+			0x03, 0x00, 0x00, 0x00, // length
+			0x66, 0x6f, 0x6f, // "foo"
+			0x00, // terminator
+		}},
+		{dbus.Signature("(uu)"), be, []byte{
+			0x04,
+			0x28, 0x75, 0x75, 0x29,
+			0x00,
+		}},
+		{dbus.Signature("(uu)"), le, []byte{
+			0x04,
+			0x28, 0x75, 0x75, 0x29,
+			0x00,
 		}},
 
 		// no map tests here. The encoding is unstable due to

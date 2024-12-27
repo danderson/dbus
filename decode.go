@@ -19,14 +19,14 @@ func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
 		return fmt.Errorf("can't unmarshal into a non-pointer")
 	}
 	if val.IsNil() {
-		return fmt.Errorf("can't unmarshal into nil pointer")
+		return fmt.Errorf("can't unmarshal into a nil pointer")
 	}
-	dec := decoders.GetRecover(val.Elem().Type())
+	dec := decoders.GetRecover(val.Type())
 	st := fragments.Decoder{
 		Order: ord,
 		In:    bs,
 	}
-	return dec(&st, val.Elem())
+	return dec(&st, val)
 }
 
 const debugDecoders = false
@@ -37,6 +37,20 @@ func debugDecoder(msg string, args ...any) {
 	}
 	log.Printf(msg, args...)
 }
+
+type Unmarshaler interface {
+	SignatureDBus() Signature
+	AlignDBus() int
+	UnmarshalDBus(st *fragments.Decoder) error
+}
+
+var unmarshalerType = reflect.TypeFor[Unmarshaler]()
+
+type unmarshalerOnly interface {
+	UnmarshalDBus(st *fragments.Decoder) error
+}
+
+var unmarshalerOnlyType = reflect.TypeFor[unmarshalerOnly]()
 
 var decoders cache[fragments.DecoderFunc]
 
@@ -53,10 +67,37 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("typeDecoder(%s)", t)
 	defer debugDecoder("end typeDecoder(%s)", t)
 
-	// TODO: pointer marshaler optimization thing?
+	// We only want Unmarshalers with pointer receivers, since a value
+	// receiver would silently discard the results of the
+	// UnmarshalDBus call and lead to confusing bugs. There are two
+	// cases we need to look for.
+	//
+	// The first is a pointer that implements Unmarshaler, and whose
+	// pointed-to type does not implement Unmarshaler. This means the
+	// type implements Unmarshaler with pointer receivers, and we can
+	// call it.
+	//
+	// The second is a value that does not implement Unmarshaler, but
+	// whose pointer does. In that case, we can take the value's
+	// address and use the pointer unmarshaler. Unmarshal only hands
+	// us values that are addressable, so we don't need an
+	// addressability check to do this.
+	isPtr := t.Kind() == reflect.Pointer
+	if t.Implements(unmarshalerType) {
+		if !isPtr || t.Elem().Implements(unmarshalerOnlyType) {
+			return newErrDecoder(t, "refusing to use dbus.Unmarshaler implementation with value receivers, Unmarshalers must use pointer receivers.")
+		} else {
+			// First case, can unmarshal into pointer.
+			return newMarshalDecoder(t)
+		}
+	} else if !isPtr && reflect.PointerTo(t).Implements(unmarshalerType) {
+		// Second case, unmarshal into value.
+		return newAddrMarshalDecoder(t)
+	}
 
 	switch t.Kind() {
 	case reflect.Pointer:
+		// Note, pointers to Unmarshaler are handled above.
 		return newPtrDecoder(t)
 	case reflect.Bool:
 		return newBoolDecoder()
@@ -93,12 +134,36 @@ func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
 	return nil
 }
 
+func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
+	debugDecoder("%s{} (external Unmarshaler, addressable)", t)
+	ptr := newMarshalDecoder(reflect.PointerTo(t))
+	return func(st *fragments.Decoder, v reflect.Value) error {
+		return ptr(st, v.Addr())
+	}
+}
+
+func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
+	debugDecoder("%s{} (external Unmarshaler)", t)
+	return func(st *fragments.Decoder, v reflect.Value) error {
+		if v.IsNil() {
+			elem := reflect.New(t.Elem())
+			v.Set(elem)
+		}
+		m := v.Interface().(Unmarshaler)
+		st.Pad(m.AlignDBus())
+		return m.UnmarshalDBus(st)
+	}
+}
+
 func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("ptr{%s}", t.Elem())
 	elem := t.Elem()
 	elemDec := decoders.Get(elem)
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
+			if !v.CanSet() {
+				return unrepresentable(t, "cannot unmarshal into nil pointer")
+			}
 			elem := reflect.New(elem)
 			if err := elemDec(st, elem.Elem()); err != nil {
 				return err
