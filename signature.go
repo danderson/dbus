@@ -5,7 +5,6 @@ import (
 	"log"
 	"reflect"
 	"strings"
-	"sync"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -31,7 +30,26 @@ type signer interface {
 
 var signerType = reflect.TypeFor[signer]()
 
-var sigCache sync.Map
+type sigCacheEntry struct {
+	sig Signature
+	err error
+}
+
+var signatures cache[sigCacheEntry]
+
+func init() {
+	// This needs to be an init func to break the initialization cycle
+	// between the cache and the calls to the cache within
+	// uncachedSignatureOf.
+	signatures.Init(
+		func(t reflect.Type) sigCacheEntry {
+			return sigCacheEntry{uncachedSignatureOf(t), nil}
+		},
+		func(t reflect.Type) sigCacheEntry {
+			sigErr(t, "recursive type")
+			panic("unreachable")
+		})
+}
 
 const debugSignatures = false
 
@@ -43,124 +61,107 @@ func debugSignature(msg string, args ...any) {
 }
 
 func SignatureOf(v any) (Signature, error) {
-	return signatureOf(reflect.TypeOf(v))
+	ret := signatures.GetRecover(reflect.TypeOf(v))
+	if ret.err != nil {
+		return "", ret.err
+	}
+	return ret.sig, nil
 }
 
-func signatureOf(t reflect.Type) (sig Signature, err error) {
+func sigErr(t reflect.Type, reason string) Signature {
+	signatures.Unwind(sigCacheEntry{err: unrepresentable(t, reason)})
+	// So that callers can return the result of this constructor and
+	// pretend that it's not doing any non-local return. The non-local
+	// return is just an optimization so that encoders don't waste
+	// time partially encoding types that will never fully succeed.
+	return ""
+}
+
+func signatureOf(t reflect.Type) Signature {
 	debugSignature("signatureOf(%s)", t)
 	defer debugSignature("end signatureOf(%s)", t)
 
-	if cached, loaded := sigCache.LoadOrStore(t, nil); loaded {
-		debugSignature("signatureOf(%s) cache = %v", t, cached)
-		if cached == nil {
-			err := unrepresentable(t, "recursive type")
-			sigCache.CompareAndSwap(t, nil, err)
-			return "", err
-		}
-		if err, ok := cached.(error); ok {
-			return "", err
-		}
-		return cached.(Signature), nil
+	ret := signatures.Get(t)
+	if ret.err != nil {
+		signatures.Unwind(ret)
 	}
-	// The defer captures t, so that the dereference loop further down
-	// doesn't result in us caching the result to the wrong place.
-	defer func(t reflect.Type) {
-		debugSignature("signatureOf(%s) = %s, %v", t, sig, err)
-		if err != nil {
-			sigCache.CompareAndSwap(t, nil, err)
-		} else {
-			sigCache.CompareAndSwap(t, nil, sig)
-		}
-	}(t)
+	return ret.sig
+}
 
+func uncachedSignatureOf(t reflect.Type) Signature {
+	debugSignature("uncachedSignatureOf(%s)", t)
+	defer debugSignature("end uncachedSignatureOf(%s)", t)
 	if t == nil {
-		return "", unrepresentable(t, "nil interface")
+		return sigErr(t, "nil interface")
 	}
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
 	if t.Implements(signerType) {
-		log.Printf("XXXXXX value impl signer")
-		return reflect.Zero(t).Interface().(signer).SignatureDBus(), nil
+		return reflect.Zero(t).Interface().(signer).SignatureDBus()
 	} else if ptr := reflect.PointerTo(t); ptr.Implements(signerType) {
-		log.Printf("XXXXXX ptr impl signer")
-		return reflect.Zero(ptr).Interface().(signer).SignatureDBus(), nil
+		return reflect.Zero(ptr).Interface().(signer).SignatureDBus()
 	}
 
 	switch t.Kind() {
 	case reflect.Bool:
-		return "b", nil
+		return "b"
 	case reflect.Int8, reflect.Uint8:
-		return "y", nil
+		return "y"
 	case reflect.Int16:
-		return "n", nil
+		return "n"
 	case reflect.Uint16:
-		return "q", nil
+		return "q"
 	case reflect.Int32:
-		return "i", nil
+		return "i"
 	case reflect.Uint32:
-		return "u", nil
+		return "u"
 	case reflect.Int64:
-		return "x", nil
+		return "x"
 	case reflect.Uint64:
-		return "t", nil
+		return "t"
 	case reflect.Float32, reflect.Float64:
-		return "d", nil
+		return "d"
 	case reflect.String:
-		return "s", nil
+		return "s"
 	case reflect.Slice, reflect.Array:
-		e := t.Elem()
-		es, err := signatureOf(e)
-		if err != nil {
-			return "", err
-		}
-		return "a" + es, nil
+		es := signatureOf(t.Elem())
+		return "a" + es
 	case reflect.Map:
 		k := t.Key()
 		if k == variantType {
 			// Would technically get caught by the struct-ness test
 			// below, but Variant is a common dbus thing and we should
 			// report a better error for it specifically.
-			return "", unrepresentable(t, "map keys cannot be Variants")
+			return sigErr(t, "map keys cannot be Variants")
 		}
 		switch k.Kind() {
 		case reflect.Slice:
-			return "", unrepresentable(t, "map keys cannot be slices")
+			return sigErr(t, "map keys cannot be slices")
 		case reflect.Array:
-			return "", unrepresentable(t, "map keys cannot be arrays")
+			return sigErr(t, "map keys cannot be arrays")
 		case reflect.Struct:
-			return "", unrepresentable(t, "map keys cannot be structs")
+			return sigErr(t, "map keys cannot be structs")
 		}
-		ks, err := signatureOf(k)
-		if err != nil {
-			return "", err
-		}
+		ks := signatureOf(k)
+		vs := signatureOf(t.Elem())
 
-		v := t.Elem()
-		vs, err := signatureOf(v)
-		if err != nil {
-			return "", err
-		}
-
-		return Signature(fmt.Sprintf("a{%s%s}", ks, vs)), nil
+		return Signature(fmt.Sprintf("a{%s%s}", ks, vs))
 	case reflect.Struct:
 		var ret []string
 		for _, f := range reflect.VisibleFields(t) {
 			if f.Anonymous || !f.IsExported() {
 				continue
 			}
-			s, err := signatureOf(f.Type)
-			if err != nil {
-				return "", err
-			}
+			s := signatureOf(f.Type)
 			ret = append(ret, string(s))
 		}
 		if len(ret) == 0 {
-			return "", unrepresentable(t, "empty struct")
+			return sigErr(t, "empty struct")
 		}
-		return Signature(fmt.Sprintf("(%s)", strings.Join(ret, ""))), nil
+		return Signature(fmt.Sprintf("(%s)", strings.Join(ret, "")))
 	}
 
-	return "", unrepresentable(t, "no mapping available")
+	return sigErr(t, "no mapping available")
 }
