@@ -32,7 +32,7 @@ var signerType = reflect.TypeFor[signer]()
 
 var sigCache sync.Map
 
-const debugSignatures = true
+const debugSignatures = false
 
 func debugSignature(msg string, args ...any) {
 	if !debugSignatures {
