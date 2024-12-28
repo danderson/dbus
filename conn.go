@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"reflect"
 	"strings"
@@ -86,11 +87,14 @@ func (c *Conn) Close() error {
 
 func (c *Conn) readLoop() {
 	for {
-		if err := c.dispatchMsg(); err != nil {
+		if err := c.dispatchMsg(); errors.Is(err, net.ErrClosed) {
+			// Conn was shut down.
+			return
+		} else if err != nil {
 			// Errors that bubble out here represent a failure to
 			// conform to the DBus protocol, and is fatal to the
 			// Conn.
-			panic(err) // TODO: plumb in better than this.
+			log.Printf("read error: %v", err)
 		}
 	}
 }
