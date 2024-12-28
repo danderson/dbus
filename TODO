@@ -1,0 +1,19 @@
+More, better error types. Currently we return ErrUnrepresentable for
+most things, even when the problem isn't representability.
+
+Decode variant types. Requires implementing some kind of DynamicStruct
+or RawStruct helper type.
+
+Implement the dbus.Message type.
+
+Implement FileDescriptor properly, with stashing/unstashing of file
+descriptors in encoder/decoder state.
+
+Implement the transport and actually talk to dbus.
+
+Figure out clean representations for map[K]dbus.Variant, so that user
+code doesn't have to type assert all over the place for maps that have
+a known key->signature(value) mapping (like the dbus.Message optional
+headers).
+
+Figure out an approach to fuzz Marshal/Unmarshal.
