@@ -30,3 +30,7 @@ we want to support int8 too. Or do we?
 
 Better handling of nil embedded structs in marshal, I think right now
 it'll just panic.
+
+Combine struct and vardict into one uber-struct-and-vardict type.
+Makes header work better, probably better ergonomics elsewhere too
+for types that are trying to be "extensible structs".
