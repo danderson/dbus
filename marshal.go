@@ -67,7 +67,7 @@ func MarshalAppend(bs []byte, v any, ord binary.AppendByteOrder) ([]byte, error)
 	enc := encoders.GetRecover(val.Type())
 	st := fragments.Encoder{
 		Order:  ord,
-		Mapper: encoders.Get,
+		Mapper: encoders.GetRecover,
 		Out:    bs,
 	}
 	if err := enc(&st, val); err != nil {
