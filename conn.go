@@ -145,8 +145,10 @@ func (c *Conn) dispatchReturn(hdr *header, body io.Reader, _ []*os.File) error {
 		return nil
 	}
 
-	if err := Unmarshal(body, hdr.Order.Order(), pending.resp); err != nil {
-		return err
+	if pending.resp != nil {
+		if err := Unmarshal(body, hdr.Order.Order(), pending.resp); err != nil {
+			return err
+		}
 	}
 	close(pending.notify)
 	return nil
