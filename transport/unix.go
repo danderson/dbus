@@ -2,12 +2,14 @@ package transport
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/creachadair/mds/queue"
 	"golang.org/x/sys/unix"
@@ -20,7 +22,7 @@ type Transport interface {
 	WriteWithFiles(bs []byte, fds []*os.File) (int, error)
 }
 
-func DialUnix(path string) (Transport, error) {
+func DialUnix(ctx context.Context, path string) (Transport, error) {
 	addr := &net.UnixAddr{
 		Net:  "unix",
 		Name: path,
@@ -37,7 +39,20 @@ func DialUnix(path string) (Transport, error) {
 	}
 	ret.buf = bufio.NewReader(funcReader(ret.readToBuf))
 
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Time{}
+	}
+
+	if err := ret.conn.SetDeadline(deadline); err != nil {
+		ret.Close()
+		return nil, err
+	}
 	if err := ret.auth(); err != nil {
+		ret.Close()
+		return nil, err
+	}
+	if err := ret.conn.SetDeadline(time.Time{}); err != nil {
 		ret.Close()
 		return nil, err
 	}
