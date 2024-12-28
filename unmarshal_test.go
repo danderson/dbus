@@ -9,7 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestTypeDecoder(t *testing.T) {
+func TestUnmarshal(t *testing.T) {
 	type testCase struct {
 		in      []byte
 		want    any

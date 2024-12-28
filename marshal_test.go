@@ -8,7 +8,7 @@ import (
 	"github.com/danderson/dbus"
 )
 
-func TestTypeEncoder(t *testing.T) {
+func TestMarshal(t *testing.T) {
 	var be, le = binary.BigEndian, binary.LittleEndian
 	encName := map[binary.AppendByteOrder]string{
 		be: "BE",
