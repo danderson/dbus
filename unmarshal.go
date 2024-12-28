@@ -10,7 +10,65 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
-func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
+// Unmarshal parses the DBus wire message data and stores the result
+// in the value pointed to by v. If v is nil or not a pointer,
+// Unmarshal returns [ErrUnrepresentable].
+//
+// Generally, Unmarshal applies the inverse of the rules used by
+// [Marshal]. The layout of the wire message must be compatible with
+// the target's DBus signature. Since messages generally do not embed
+// their signature, it is up to the caller to know the expected
+// message format and match it.
+//
+// Unmarshal traverses the value v recursively. If an encountered value
+// implements [Unmarshaler], Unmarshal calls
+// [Unmarshaler.UnmarshalDBus] to unmarshal it. Types implementing
+// [Unmarshaler] must use a pointer receiver on
+// [Unmarshaler.UnmarshalDBus]. Attempting to unmarshal using a value
+// receiver UnmarshalDBus method results in [ErrUnrepresentable].
+//
+// Otherwise, Unmarshal uses the following type-dependent default
+// encodings:
+//
+// DBus integer, boolean, float and string values decode into the
+// corresponding Go types. DBus floats are exclusively double
+// precision, but can be decoded into float64, or float32 with a loss
+// of precision.
+//
+// DBus arrays can decode into Go slices or arrays. When decoding into
+// an array, the message's array length must match the target array's
+// length. When decoding into a slice, Unmarshal resets the slice
+// length to zero and then appends each element to the slice.
+//
+// DBus structs decode into Go structs. Message fields decode into
+// struct fields in declaration order, according to the Go struct
+// field's type. Embedded struct fields are decoded as if their inner
+// exported fields were fields in the outer struct, subject to the
+// usual Go visibility rules.
+//
+// DBus dictionaries decode into Go maps. When decoding into a map,
+// Unmarshal first clears the map, or allocates a new one if the
+// target map is nil. Then, the dictionary's key-value pairs are
+// stored into the map in message order. If the message's map contains
+// duplicate entries for a key, all but the last entry's value are
+// discarded.
+//
+// Pointers decode as the value pointed to. Unmarshal allocates zero
+// values as needed when it encounters nil pointers.
+//
+// [Signature], [ObjectPath], and [FileDescriptor] decode the
+// corresponding DBus types.
+//
+// DBus variant values currently cannot be decoded (TODO).
+//
+// [int], [uint], interface, channel, complex and function values have
+// no equivalent DBus type. If Unmarshal encounters such a value it
+// will return [ErrUnrepresentable].
+//
+// DBus cannot represent cyclic or recursive types. Attempting to
+// decode into such values causes Unmarshal to return an
+// [ErrUnrepresentable].
+func Unmarshal(data []byte, ord binary.ByteOrder, v any) error {
 	if v == nil {
 		return fmt.Errorf("can't unmarshal into nil interface")
 	}
@@ -23,12 +81,15 @@ func Unmarshal(bs []byte, ord binary.ByteOrder, v any) error {
 	}
 	dec := decoders.GetRecover(val.Type())
 	st := fragments.Decoder{
-		Order: ord,
-		In:    bs,
+		Order:  ord,
+		Mapper: decoders.GetRecover,
+		In:     data,
 	}
 	return dec(&st, val)
 }
 
+// debugDecoders enables spammy debug logging during the construction
+// of decoder funcs.
 const debugDecoders = false
 
 func debugDecoder(msg string, args ...any) {
@@ -38,6 +99,20 @@ func debugDecoder(msg string, args ...any) {
 	log.Printf(msg, args...)
 }
 
+// Unmarshaler is the interface implemented by types that can
+// unmarshal themselves.
+//
+// [Unmarshaler.SignatureDBus] and [Unmarshaler.AlignDBus] are called
+// with zero receivers, and therefore the returned [Signature] and
+// alignment cannot depend on the incoming message.
+//
+// [Unmarshaler.UnmarshalDBus] must have a pointer receiver. If
+// Unmarshal encounters an Unmarshaler whose UnmarshalDBus method
+// takes a value receiver, it will return [ErrUnrepresentable].
+//
+// [Unmarshaler.UnmarshalDBus] may assume that the output has already
+// been padded according to the value returned by
+// [Unmarshaler.AlignDBus].
 type Unmarshaler interface {
 	SignatureDBus() Signature
 	AlignDBus() int
@@ -63,6 +138,7 @@ func init() {
 	})
 }
 
+// uncachedTypeDecoder returns the DecoderFunc for t.
 func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 	debugDecoder("typeDecoder(%s)", t)
 	defer debugDecoder("end typeDecoder(%s)", t)
@@ -122,6 +198,18 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 	return newErrDecoder(t, "no known mapping")
 }
 
+// newErrDecoder signals that the requested type cannot be decoded to
+// the DBus wire format for the given reason.
+//
+// Internally the function triggers an unwind back to Unmarshal,
+// caching the error with all intermediate DecoderFuncs. This saves
+// time during decoding because Unmarshal can return an error
+// immediately, rather than get halfway through a complex object only
+// to discover that it cannot be decoded.
+//
+// However, the semantics are equivalent to returning the error
+// decoder normally, so callers may use this function like any other
+// DecoderFunc constructor.
 func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
 	err := unrepresentable(t, reason)
 	decoders.Unwind(func(*fragments.Decoder, reflect.Value) error {

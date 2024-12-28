@@ -90,9 +90,11 @@ func debugEncoder(msg string, args ...any) {
 // Marshaler is the interface implemented by types that can marshal
 // themselves to the DBus wire format.
 //
-// The [Signature] and alignment returned by Marshalers may vary
-// depending on the value being encoded, but a given value must have a
-// consistent signature and alignment.
+// [Unmarshaler.SignatureDBus] and [Unmarshaler.AlignDBus] should
+// return constants, to match the required semantics of the methods in
+// the [Unmarshaler] interface. Advanced [Marshal]-only types may vary
+// the [Signature] and alignment based on the value being encoded, but
+// the signature and alignment of a particular value must be constant.
 //
 // [Marshaler.MarshalDBus] may assume that the output has already been
 // padded according to the value returned by [Marshaler.AlignDBus].
