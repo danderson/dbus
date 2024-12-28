@@ -1,6 +1,8 @@
 package dbus_test
 
 import (
+	"fmt"
+
 	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 )
@@ -85,17 +87,20 @@ type SelfMarshalerVal struct {
 
 func (s SelfMarshalerVal) MarshalDBus(st *fragments.Encoder) error {
 	st.Pad(3)
-	st.Uint16(uint16(s.B) + 1)
+	st.Write([]byte{0, s.B + 1})
 	return nil
 }
 
 func (s SelfMarshalerVal) UnmarshalDBus(st *fragments.Decoder) error {
 	st.Pad(3)
-	u16, err := st.Uint16()
+	bs, err := st.Read(2)
 	if err != nil {
 		return err
 	}
-	s.B = byte(u16) - 1
+	if bs[0] != 0 {
+		return fmt.Errorf("unexpected non-zero first bytes %x", bs[0])
+	}
+	s.B = bs[1] - 1
 	return nil
 }
 
@@ -111,17 +116,20 @@ type SelfMarshalerPtr struct {
 
 func (s *SelfMarshalerPtr) MarshalDBus(st *fragments.Encoder) error {
 	st.Pad(3)
-	st.Uint16(uint16(s.B) + 1)
+	st.Write([]byte{0, s.B + 1})
 	return nil
 }
 
 func (s *SelfMarshalerPtr) UnmarshalDBus(st *fragments.Decoder) error {
 	st.Pad(3)
-	u16, err := st.Uint16()
+	bs, err := st.Read(2)
 	if err != nil {
 		return err
 	}
-	s.B = byte(u16) - 1
+	if bs[0] != 0 {
+		return fmt.Errorf("unexpected non-zero first bytes %x", bs[0])
+	}
+	s.B = bs[1] - 1
 	return nil
 }
 

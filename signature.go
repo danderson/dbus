@@ -16,7 +16,7 @@ func (s Signature) MarshalDBus(st *fragments.Encoder) error {
 		return fmt.Errorf("signature exceeds maximum length of 255 bytes")
 	}
 	st.Uint8(uint8(len(s)))
-	st.String(string(s))
+	st.Write([]byte(s))
 	st.Uint8(0)
 	return nil
 }
@@ -26,8 +26,8 @@ func (s *Signature) UnmarshalDBus(st *fragments.Decoder) error {
 	if err != nil {
 		return err
 	}
-	str, err := st.String(int(u8))
-	*s = Signature(str)
+	bs, err := st.Read(int(u8) + 1)
+	*s = Signature(bs[:len(bs)-1])
 	return nil
 }
 

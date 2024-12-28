@@ -199,14 +199,18 @@ func TestTypeEncoder(t *testing.T) {
 			0x42,
 		}},
 
+		// SelfMarshalerVal ignores the overall byte order and always
+		// writes big-endian.
 		{SelfMarshalerVal{66}, le, []byte{
-			0x43, 0x00,
+			0x00, 0x43,
 		}},
 		{SelfMarshalerVal{66}, be, []byte{
 			0x00, 0x43,
 		}},
 
-		{&SelfMarshalerPtr{66}, le, []byte{0x43, 0x00}},
+		// SelfMarshalerVal ignores the overall byte order and always
+		// writes big-endian.
+		{&SelfMarshalerPtr{66}, le, []byte{0x00, 0x43}},
 		{&SelfMarshalerPtr{66}, be, []byte{0x00, 0x43}},
 
 		{&NestedSelfMarshalerPtr{66, SelfMarshalerPtr{42}}, le, []byte{
@@ -216,7 +220,7 @@ func TestTypeEncoder(t *testing.T) {
 			// dbus, to verify we're delegating to the Marshaler)
 			0x00, 0x00,
 			// s.B
-			0x2b, 0x00,
+			0x00, 0x2b,
 		}},
 		{&NestedSelfMarshalerPtr{66, SelfMarshalerPtr{42}}, be, []byte{
 			// s.A
@@ -234,10 +238,10 @@ func TestTypeEncoder(t *testing.T) {
 			// pad to multiple of 3
 			0x00, 0x00,
 			// arr[0]
-			0x02, 0x00,
+			0x00, 0x02,
 			// pad to multiple of 3
 			0x00,
-			0x03, 0x00,
+			0x00, 0x03,
 		}},
 
 		{dbus.ObjectPath("foo"), be, []byte{

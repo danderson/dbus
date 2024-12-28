@@ -179,7 +179,6 @@ func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 func newBoolDecoder() fragments.DecoderFunc {
 	debugDecoder("bool{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		st.Pad(4)
 		u, err := st.Uint32()
 		if err != nil {
 			return err
@@ -204,7 +203,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	case 2:
 		debugDecoder("int16{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(2)
 			u16, err := st.Uint16()
 			if err != nil {
 				return err
@@ -215,7 +213,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	case 4:
 		debugDecoder("int32{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(4)
 			u32, err := st.Uint32()
 			if err != nil {
 				return err
@@ -226,7 +223,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	case 8:
 		debugDecoder("int64{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(8)
 			u64, err := st.Uint64()
 			if err != nil {
 				return err
@@ -254,7 +250,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	case 2:
 		debugDecoder("uint16{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(2)
 			u16, err := st.Uint16()
 			if err != nil {
 				return err
@@ -265,7 +260,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	case 4:
 		debugDecoder("uint32{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(4)
 			u32, err := st.Uint32()
 			if err != nil {
 				return err
@@ -276,7 +270,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	case 8:
 		debugDecoder("uint64{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(8)
 			u64, err := st.Uint64()
 			if err != nil {
 				return err
@@ -292,7 +285,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 func newFloatDecoder() fragments.DecoderFunc {
 	debugDecoder("float64{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		st.Pad(8)
 		u64, err := st.Uint64()
 		if err != nil {
 			return err
@@ -305,19 +297,11 @@ func newFloatDecoder() fragments.DecoderFunc {
 func newStringDecoder() fragments.DecoderFunc {
 	debugDecoder("string{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		st.Pad(4)
-		u32, err := st.Uint32()
+		s, err := st.String()
 		if err != nil {
 			return err
 		}
-		ret, err := st.String(int(u32))
-		if err != nil {
-			return err
-		}
-		if _, err := st.Uint8(); err != nil {
-			return err
-		}
-		v.SetString(ret)
+		v.SetString(s)
 		return nil
 	}
 }
@@ -326,34 +310,35 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	if t.Elem().Kind() == reflect.Uint8 {
 		debugDecoder("[]byte{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
-			st.Pad(4)
-			u32, err := st.Uint32()
+			bs, err := st.Bytes()
 			if err != nil {
 				return err
 			}
-			ret, err := st.Bytes(int(u32))
-			if err != nil {
-				return err
-			}
-			v.SetBytes(ret)
+			v.SetBytes(bs)
 			return nil
 		}
 	}
 
 	debugDecoder("[]%s{}", t.Elem())
 	elemDec := decoders.Get(t.Elem())
+	var isStruct bool
+	if t.Elem().Implements(unmarshalerType) {
+		isStruct = reflect.Zero(t.Elem()).Interface().(Marshaler).AlignDBus() == 8
+	} else if ptr := reflect.PointerTo(t.Elem()); ptr.Implements(marshalerType) {
+		isStruct = reflect.Zero(ptr).Interface().(Marshaler).AlignDBus() == 8
+	} else {
+		isStruct = t.Elem().Kind() == reflect.Struct
+	}
 
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		st.Pad(4)
-		u32, err := st.Uint32()
+		ln, err := st.Array(isStruct)
 		if err != nil {
 			return err
 		}
-		st.Pad(arrayPad(t.Elem()))
 
-		v.Grow(int(u32))
-		v.Set(v.Slice3(0, int(u32), int(u32)))
-		for i := 0; i < int(u32); i++ {
+		v.Grow(ln)
+		v.Set(v.Slice3(0, ln, ln))
+		for i := 0; i < ln; i++ {
 			if err := elemDec(st, v.Index(i)); err != nil {
 				return err
 			}
@@ -370,7 +355,7 @@ type structFieldDecoder struct {
 type structDecoder []structFieldDecoder
 
 func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
-	st.Pad(8)
+	st.Struct()
 	for _, f := range fs {
 		fv := v
 		for i, hop := range f.idx {
@@ -448,12 +433,10 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 	vDec := decoders.Get(vt)
 
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		st.Pad(4)
-		u32, err := st.Uint32()
+		ln, err := st.Array(true)
 		if err != nil {
 			return err
 		}
-		st.Pad(8)
 
 		if v.IsNil() {
 			v.Set(reflect.MakeMap(t))
@@ -462,10 +445,10 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 		}
 		key := reflect.New(kt)
 		val := reflect.New(vt)
-		for i := 0; i < int(u32); i++ {
+		for i := 0; i < ln; i++ {
 			key.Elem().SetZero()
 			val.Elem().SetZero()
-			st.Pad(8)
+			st.Struct()
 			if err := kDec(st, key.Elem()); err != nil {
 				return err
 			}

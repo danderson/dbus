@@ -224,7 +224,6 @@ func newPtrEncoder(t reflect.Type) fragments.EncoderFunc {
 func newBoolEncoder() fragments.EncoderFunc {
 	debugEncoder("bool{}")
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		st.Pad(4)
 		val := uint32(0)
 		if v.Bool() {
 			val = 1
@@ -245,21 +244,18 @@ func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 	case 2:
 		debugEncoder("int16{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Pad(2)
 			st.Uint16(uint16(v.Int()))
 			return nil
 		}
 	case 4:
 		debugEncoder("int32{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Pad(4)
 			st.Uint32(uint32(v.Int()))
 			return nil
 		}
 	case 8:
 		debugEncoder("int64{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Pad(8)
 			st.Uint64(uint64(v.Int()))
 			return nil
 		}
@@ -279,21 +275,18 @@ func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 	case 2:
 		debugEncoder("uint16{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Pad(2)
 			st.Uint16(uint16(v.Uint()))
 			return nil
 		}
 	case 4:
 		debugEncoder("uint32{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Pad(4)
 			st.Uint32(uint32(v.Uint()))
 			return nil
 		}
 	case 8:
 		debugEncoder("uint64{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Pad(8)
 			st.Uint64(v.Uint())
 			return nil
 		}
@@ -305,7 +298,6 @@ func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 func newFloatEncoder() fragments.EncoderFunc {
 	debugEncoder("float64{}")
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		st.Pad(8)
 		st.Uint64(math.Float64bits(v.Float()))
 		return nil
 	}
@@ -314,11 +306,7 @@ func newFloatEncoder() fragments.EncoderFunc {
 func newStringEncoder() fragments.EncoderFunc {
 	debugEncoder("string{}")
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		s := v.String()
-		st.Pad(4)
-		st.Uint32(uint32(len(s)))
-		st.String(s)
-		st.Uint8(0)
+		st.String(v.String())
 		return nil
 	}
 }
@@ -328,55 +316,30 @@ func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 		// Fast path for []byte
 		debugEncoder("[]byte{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
-			bs := v.Bytes()
-			st.Pad(4)
-			st.Uint32(uint32(len(bs)))
-			st.Bytes(bs)
+			st.Bytes(v.Bytes())
 			return nil
 		}
 	}
 
 	debugEncoder("[]%s{}", t.Elem())
 	elemEnc := encoders.Get(t.Elem())
+	var isStruct bool
+	if t.Elem().Implements(marshalerType) {
+		isStruct = reflect.Zero(t.Elem()).Interface().(Marshaler).AlignDBus() == 8
+	} else if ptr := reflect.PointerTo(t.Elem()); ptr.Implements(marshalerType) {
+		isStruct = reflect.Zero(ptr).Interface().(Marshaler).AlignDBus() == 8
+	} else {
+		isStruct = t.Elem().Kind() == reflect.Struct
+	}
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		ln := v.Len()
-		st.Pad(4)
-		st.Uint32(uint32(ln))
-		// Per the spec, zero length arrays must still insert padding
-		// after the array length, to match the alignment of the
-		// non-existent array entries.
-		st.Pad(arrayPad(t.Elem()))
-		for i := 0; i < ln; i++ {
-			// For non-empty arrays, element encoders provide their
-			// own alignment padding between elements.
+		st.Array(v.Len(), isStruct)
+		for i := 0; i < v.Len(); i++ {
 			if err := elemEnc(st, v.Index(i)); err != nil {
 				return err
 			}
 		}
 		return nil
-	}
-}
-
-// arrayPad returns the correct byte alignment for elem.
-func arrayPad(elem reflect.Type) int {
-	if elem.Implements(marshalerType) {
-		return reflect.Zero(elem).Interface().(Marshaler).AlignDBus()
-	} else if ptr := reflect.PointerTo(elem); ptr.Implements(marshalerType) {
-		return reflect.Zero(ptr).Interface().(Marshaler).AlignDBus()
-	} else {
-		switch elem.Kind() {
-		case reflect.Int8, reflect.Uint8:
-			return 1
-		case reflect.Int16, reflect.Uint16:
-			return 2
-		case reflect.Bool, reflect.Int32, reflect.Uint32, reflect.Slice, reflect.Array, reflect.String:
-			return 4
-		case reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.Struct:
-			return 8
-		default:
-			panic(fmt.Sprintf("missing array pad value for %s", elem))
-		}
 	}
 }
 
@@ -388,8 +351,7 @@ type structFieldEncoder struct {
 type structEncoder []structFieldEncoder
 
 func (fs structEncoder) encode(st *fragments.Encoder, v reflect.Value) error {
-	st.Pad(8)
-
+	st.Struct()
 	for _, f := range fs {
 		fv := v.FieldByIndex(f.idx)
 		if err := f.enc(st, fv); err != nil {
@@ -430,12 +392,10 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		ln := v.Len()
-		st.Pad(4)
-		st.Uint32(uint32(ln))
-		st.Pad(8)
+		st.Array(ln, true)
 		iter := v.MapRange()
 		for iter.Next() {
-			st.Pad(8)
+			st.Struct()
 			if err := kEnc(st, iter.Key()); err != nil {
 				return err
 			}
