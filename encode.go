@@ -20,8 +20,9 @@ import (
 // Otherwise, Marshal uses the following type-dependent default
 // encodings:
 //
-// Integer, boolean, float64, and string values encode to their
-// corresponding DBus basic types. float32 values encode like float64.
+// Fixed width integer, boolean, float64, and string values encode to
+// their corresponding DBus basic types. float32 values encode like
+// float64.
 //
 // Array and slice values encode as DBus arrays. Nil slices encode the
 // same as an empty slice.
@@ -45,9 +46,9 @@ import (
 // must be a value acceptable to Marshal, or it will return an
 // [ErrUnrepresentable].
 //
-// Interface, channel, complex, and function values cannot be
-// encoded. Attempting to encode such values causes Marshal to return
-// an [ErrUnrepresentable].
+// [int], [uint], interface, channel, complex, and function values
+// cannot be encoded. Attempting to encode such values causes Marshal
+// to return an [ErrUnrepresentable].
 //
 // DBus cannot represent cyclic or recursive types, and Marshal does
 // not handle them. Attempting to encode such values causes Marshal to
