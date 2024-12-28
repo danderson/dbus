@@ -21,3 +21,15 @@ func unrepresentable(t reflect.Type, reason string) error {
 	}
 	return ErrUnrepresentable{ts, reason}
 }
+
+type CallError struct {
+	Name   string
+	Detail string
+}
+
+func (e CallError) Error() string {
+	if e.Detail == "" {
+		return fmt.Sprintf("call error: %s", e.Name)
+	}
+	return fmt.Sprintf("call error %s: %s", e.Name, e.Detail)
+}
