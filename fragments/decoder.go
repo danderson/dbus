@@ -141,32 +141,63 @@ func (d *Decoder) Value(v any) error {
 	return fn(d, rv.Elem())
 }
 
-// Array reads the header of an array and returns the number of
-// elements in the array.
+// Array reads an array.
+//
+// readElement is called repeatedly while there is array data
+// remaining to process, passing in the array index of the element to
+// be decoded. readElement must completely consume all array bytes
+// from the input, and must not read beyond the end of the array data.
+//
+// Array returns the total number of array elements that were
+// processed.
 //
 // containsStructs indicates whether the array's elements are structs,
-// so that the decoder consumes padding appropriately even if the
-// array contains no elements.
+// so that the decoder consumes array header padding appropriately
+// even if the array contains no elements.
 //
 // containsStructs only affects the size and alignment of the struct
 // header. When reading an array of structs, the caller must also call
 // [Decoder.Struct] to align with each array element correctly.
-func (d *Decoder) Array(containsStructs bool) (int, error) {
+func (d *Decoder) Array(containsStructs bool, readElement func(int) error) (int, error) {
 	ln, err := d.Uint32()
 	if err != nil {
 		return 0, err
 	}
 	if containsStructs {
-		if err := d.Struct(); err != nil {
+		if err := d.Pad(8); err != nil {
 			return 0, err
 		}
 	}
-	return int(ln), nil
+	if ln == 0 {
+		return 0, nil
+	}
+	outerReader := d.In
+	limit := &io.LimitedReader{
+		R: outerReader,
+		N: int64(ln),
+	}
+	d.In = limit
+	defer func() {
+		d.In = outerReader
+	}()
+	idx := 0
+	for limit.N > 0 {
+		if err := readElement(idx); err != nil {
+			return idx, err
+		}
+		idx++
+	}
+	return idx + 1, nil
 }
 
-// Struct aligns the input suitably for the start of a struct.
-func (d *Decoder) Struct() error {
-	return d.Pad(8)
+// Struct reads a struct.
+//
+// Struct fields must be read within the provided fields function.
+func (d *Decoder) Struct(fields func() error) error {
+	if err := d.Pad(8); err != nil {
+		return err
+	}
+	return fields()
 }
 
 // ByteOrderFlag reads a DBus byte order flag byte, and sets

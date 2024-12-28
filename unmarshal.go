@@ -419,18 +419,20 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		ln, err := st.Array(isStruct)
+		v.Set(v.Slice(0, 0))
+
+		_, err := st.Array(isStruct, func(i int) error {
+			v.Grow(1)
+			v.Set(v.Slice(0, i+1))
+			if err := elemDec(st, v.Index(i)); err != nil {
+				return err
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
 
-		v.Grow(ln)
-		v.Set(v.Slice3(0, ln, ln))
-		for i := 0; i < ln; i++ {
-			if err := elemDec(st, v.Index(i)); err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 }
@@ -456,16 +458,15 @@ func fieldByIndexAlloc(v reflect.Value, idx [][]int) reflect.Value {
 }
 
 func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
-	if err := st.Struct(); err != nil {
-		return err
-	}
-	for _, f := range fs {
-		fv := fieldByIndexAlloc(v, f.idx)
-		if err := f.dec(st, fv); err != nil {
-			return err
+	return st.Struct(func() error {
+		for _, f := range fs {
+			fv := fieldByIndexAlloc(v, f.idx)
+			if err := f.dec(st, fv); err != nil {
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
@@ -508,27 +509,26 @@ type varDictDecoder struct {
 }
 
 func (vd *varDictDecoder) decode(d *fragments.Decoder, v reflect.Value) error {
-	ln, err := d.Array(true)
-	if err != nil {
-		return err
-	}
-
 	other := fieldByIndexAlloc(v, vd.mapIndex)
 	otherInit := false
 
 	key := reflect.New(vd.keyType)
 	val := reflect.New(variantType)
-	for range ln {
+
+	_, err := d.Array(true, func(i int) error {
 		key.Elem().SetZero()
 		val.Elem().SetZero()
 
-		if err := d.Struct(); err != nil {
-			return err
-		}
-		if err := vd.kDec(d, key.Elem()); err != nil {
-			return err
-		}
-		if err := vd.vDec(d, val.Elem()); err != nil {
+		err := d.Struct(func() error {
+			if err := vd.kDec(d, key.Elem()); err != nil {
+				return err
+			}
+			if err := vd.vDec(d, val.Elem()); err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
 			return err
 		}
 
@@ -555,6 +555,10 @@ func (vd *varDictDecoder) decode(d *fragments.Decoder, v reflect.Value) error {
 			}
 			other.SetMapIndex(key.Elem(), val.Elem())
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -618,31 +622,35 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 	vDec := decoders.Get(vt)
 
 	return func(st *fragments.Decoder, v reflect.Value) error {
-		ln, err := st.Array(true)
-		if err != nil {
-			return err
-		}
-
 		if v.IsNil() {
 			v.Set(reflect.MakeMap(t))
 		} else {
 			v.Clear()
 		}
+
 		key := reflect.New(kt)
 		val := reflect.New(vt)
-		for i := 0; i < ln; i++ {
+
+		_, err := st.Array(true, func(i int) error {
 			key.Elem().SetZero()
 			val.Elem().SetZero()
-			if err := st.Struct(); err != nil {
-				return err
-			}
-			if err := kDec(st, key.Elem()); err != nil {
-				return err
-			}
-			if err := vDec(st, val.Elem()); err != nil {
+			err := st.Struct(func() error {
+				if err := kDec(st, key.Elem()); err != nil {
+					return err
+				}
+				if err := vDec(st, val.Elem()); err != nil {
+					return err
+				}
+				return nil
+			})
+			if err != nil {
 				return err
 			}
 			v.SetMapIndex(key.Elem(), val.Elem())
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 		return nil
 	}

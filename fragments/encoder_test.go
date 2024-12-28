@@ -89,14 +89,18 @@ func TestEncoder(t *testing.T) {
 		{
 			"struct padding",
 			func(e *fragments.Encoder) {
-				e.Struct()
-				e.Uint64(66)
-				e.Struct()
-				e.Uint32(42)
-				e.Struct()
-				e.Uint16(66)
-				e.Struct()
-				e.Uint8(42)
+				e.Struct(func() {
+					e.Uint64(66)
+				})
+				e.Struct(func() {
+					e.Uint32(42)
+				})
+				e.Struct(func() {
+					e.Uint16(66)
+				})
+				e.Struct(func() {
+					e.Uint8(42)
+				})
 			},
 			[]byte{
 				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42,
@@ -111,12 +115,13 @@ func TestEncoder(t *testing.T) {
 		{
 			"array",
 			func(e *fragments.Encoder) {
-				e.Array(2, false)
-				e.Uint16(1)
-				e.Uint16(2)
+				e.Array(false, func() {
+					e.Uint16(1)
+					e.Uint16(2)
+				})
 			},
 			[]byte{
-				0x00, 0x00, 0x00, 0x02, // length
+				0x00, 0x00, 0x00, 0x04, // length
 				0x00, 0x01,
 				0x00, 0x02,
 			},
@@ -125,7 +130,7 @@ func TestEncoder(t *testing.T) {
 		{
 			"empty array",
 			func(e *fragments.Encoder) {
-				e.Array(0, false)
+				e.Array(false, func() {})
 			},
 			[]byte{
 				0x00, 0x00, 0x00, 0x00, // length
@@ -135,14 +140,17 @@ func TestEncoder(t *testing.T) {
 		{
 			"struct array",
 			func(e *fragments.Encoder) {
-				e.Array(2, true)
-				e.Struct()
-				e.Uint16(1)
-				e.Struct()
-				e.Uint16(2)
+				e.Array(true, func() {
+					e.Struct(func() {
+						e.Uint16(1)
+					})
+					e.Struct(func() {
+						e.Uint16(2)
+					})
+				})
 			},
 			[]byte{
-				0x00, 0x00, 0x00, 0x02, // length
+				0x00, 0x00, 0x00, 0x0a, // length
 				0x00, 0x00, 0x00, 0x00, // pad
 				0x00, 0x01,
 				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // pad
@@ -153,7 +161,7 @@ func TestEncoder(t *testing.T) {
 		{
 			"empty struct array",
 			func(e *fragments.Encoder) {
-				e.Array(0, true)
+				e.Array(true, func() {})
 			},
 			[]byte{
 				0x00, 0x00, 0x00, 0x00, // length
@@ -162,19 +170,16 @@ func TestEncoder(t *testing.T) {
 		},
 
 		{
-			"dynamic array",
+			"array followed by other stuff",
 			func(e *fragments.Encoder) {
-				addElement := e.DynamicArray(false)
-				addElement()
-				e.Uint16(1)
-				addElement()
-				e.Uint16(2)
-				// Note, no addElement, the following uint16 is not in
-				// the array
+				e.Array(false, func() {
+					e.Uint16(1)
+					e.Uint16(2)
+				})
 				e.Uint16(3)
 			},
 			[]byte{
-				0x00, 0x00, 0x00, 0x02, // length
+				0x00, 0x00, 0x00, 0x04, // length
 				0x00, 0x01,
 				0x00, 0x02,
 				0x00, 0x03,
@@ -182,45 +187,25 @@ func TestEncoder(t *testing.T) {
 		},
 
 		{
-			"empty dynamic array",
+			"struct array followed by other stuff",
 			func(e *fragments.Encoder) {
-				e.DynamicArray(false)
-			},
-			[]byte{
-				0x00, 0x00, 0x00, 0x00, // length
-			},
-		},
-
-		{
-			"dynamic struct array",
-			func(e *fragments.Encoder) {
-				addElement := e.DynamicArray(true)
-				addElement()
-				e.Uint16(1)
-				addElement()
-				e.Uint16(2)
-				// Note, no addElement, the following uint16 is not in
-				// the array
+				e.Array(true, func() {
+					e.Struct(func() {
+						e.Uint16(1)
+					})
+					e.Struct(func() {
+						e.Uint16(2)
+					})
+				})
 				e.Uint16(3)
 			},
 			[]byte{
-				0x00, 0x00, 0x00, 0x02, // length
+				0x00, 0x00, 0x00, 0x0a, // length
 				0x00, 0x00, 0x00, 0x00, // pad to struct
 				0x00, 0x01,
 				0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // pad to struct
 				0x00, 0x02,
 				0x00, 0x03,
-			},
-		},
-
-		{
-			"empty dynamic struct array",
-			func(e *fragments.Encoder) {
-				e.DynamicArray(true)
-			},
-			[]byte{
-				0x00, 0x00, 0x00, 0x00, // length
-				0x00, 0x00, 0x00, 0x00, // pad to struct
 			},
 		},
 

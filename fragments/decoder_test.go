@@ -119,8 +119,15 @@ func (d *mustDecoder) MustValue(want any) {
 	}
 }
 
-func (d *mustDecoder) MustArray(containsStructs bool, wantLen int) {
-	gotLen, err := d.Array(containsStructs)
+func (d *mustDecoder) MustArray(containsStructs bool, reads ...func()) {
+	wantLen := len(reads)
+	gotLen, err := d.Array(containsStructs, func(idx int) error {
+		if idx >= len(reads) {
+			d.t.Fatalf("Array() tried to read %d elements, want %d", idx+1, wantLen)
+		}
+		reads[idx]()
+		return nil
+	})
 	if err != nil {
 		d.t.Fatalf("Array() got err: %v", err)
 	}
@@ -132,8 +139,12 @@ func (d *mustDecoder) MustArray(containsStructs bool, wantLen int) {
 	}
 }
 
-func (d *mustDecoder) MustStruct() {
-	if err := d.Struct(); err != nil {
+func (d *mustDecoder) MustStruct(fields func()) {
+	err := d.Struct(func() error {
+		fields()
+		return nil
+	})
+	if err != nil {
 		d.t.Fatalf("Struct() got err: %v", err)
 	}
 }
@@ -236,14 +247,18 @@ func TestDecoder(t *testing.T) {
 				0x2a,
 			},
 			func(d *mustDecoder) {
-				d.MustStruct()
-				d.MustUint64(66)
-				d.MustStruct()
-				d.MustUint32(42)
-				d.MustStruct()
-				d.MustUint16(66)
-				d.MustStruct()
-				d.MustUint8(42)
+				d.MustStruct(func() {
+					d.MustUint64(66)
+				})
+				d.MustStruct(func() {
+					d.MustUint32(42)
+				})
+				d.MustStruct(func() {
+					d.MustUint16(66)
+				})
+				d.MustStruct(func() {
+					d.MustUint8(42)
+				})
 			},
 		},
 
@@ -255,9 +270,10 @@ func TestDecoder(t *testing.T) {
 				0x00, 0x02,
 			},
 			func(d *mustDecoder) {
-				d.MustArray(false, 2)
-				d.MustUint16(1)
-				d.MustUint16(2)
+				d.MustArray(false,
+					func() { d.MustUint16(1) },
+					func() { d.MustUint16(2) },
+				)
 			},
 		},
 
@@ -267,7 +283,7 @@ func TestDecoder(t *testing.T) {
 				0x00, 0x00, 0x00, 0x00, // length
 			},
 			func(d *mustDecoder) {
-				d.MustArray(false, 0)
+				d.MustArray(false)
 			},
 		},
 
@@ -281,11 +297,18 @@ func TestDecoder(t *testing.T) {
 				0x00, 0x02,
 			},
 			func(d *mustDecoder) {
-				d.MustArray(true, 2)
-				d.MustStruct()
-				d.MustUint16(1)
-				d.MustStruct()
-				d.MustUint16(2)
+				d.MustArray(true,
+					func() {
+						d.MustStruct(func() {
+							d.MustUint16(1)
+						})
+					},
+					func() {
+						d.MustStruct(func() {
+							d.MustUint16(2)
+						})
+					},
+				)
 			},
 		},
 
@@ -296,7 +319,7 @@ func TestDecoder(t *testing.T) {
 				0x00, 0x00, 0x00, 0x00, // pad
 			},
 			func(d *mustDecoder) {
-				d.MustArray(true, 0)
+				d.MustArray(true)
 			},
 		},
 

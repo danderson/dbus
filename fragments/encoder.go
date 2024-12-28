@@ -91,55 +91,36 @@ func (e *Encoder) Value(v any) error {
 	return fn(e, reflect.ValueOf(v))
 }
 
-// Array writes the header of an array of length elements.
+// Array writes an array to the output.
+//
+// Array elements must be added within the provided elements
+// function. The elements function is responsible for padding each
+// array element to the correct alignment for the element type.
 //
 // containsStructs indicates whether the array's elements are structs,
-// so that the array header can be padded accordingly even if the
-// array contains no elements.
-//
-// containsStructs only affects the size and alignment of the struct
-// header. When writing an array of structs, the caller must also call
-// [Encoder.Struct] to align each array element correctly.
-func (e *Encoder) Array(length int, containsStructs bool) {
-	e.Pad(4)
-	e.Uint32(uint32(length))
-	if containsStructs {
-		e.Struct()
-	}
-}
-
-// DynamicArray writes the header of an array whose size isn't known
-// upfront.
-//
-// The returned addElement function must be called for each item added
-// to the array.
-//
-// containsStructs indicates whether the array's elements are structs,
-// so that the array header and elements can be padded accordingly
-// even if the array contains no elements.
-//
-// Unlike [Encoder.Array], containsStructs affects the alignment of
-// every array element, so calls to [Encoder.Struct] can be omitted if
-// desired.
-func (e *Encoder) DynamicArray(containsStructs bool) (addElement func()) {
+// so that the array header can be padded accordingly.
+func (e *Encoder) Array(containsStructs bool, elements func() error) error {
 	e.Pad(4)
 	offset := len(e.Out)
 	e.Uint32(0)
 	if containsStructs {
-		e.Struct()
+		e.Pad(8)
 	}
-	return func() {
-		ln := e.Order.Uint32(e.Out[offset:])
-		e.Order.PutUint32(e.Out[offset:], ln+1)
-		if containsStructs {
-			e.Struct()
-		}
-	}
+
+	start := len(e.Out)
+	err := elements()
+	end := len(e.Out)
+	e.Order.PutUint32(e.Out[offset:], uint32(end-start))
+
+	return err
 }
 
-// Struct aligns the output suitably for the start of a struct.
-func (e *Encoder) Struct() {
+// Struct writes a struct to the output.
+//
+// Struct fields must be added within the provided elements function.
+func (e *Encoder) Struct(elements func() error) error {
 	e.Pad(8)
+	return elements()
 }
 
 // ByteOrderFlag writes the DBus byte order flag byte ('l' or 'B')

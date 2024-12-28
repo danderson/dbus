@@ -335,13 +335,14 @@ func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		st.Array(v.Len(), isStruct)
-		for i := 0; i < v.Len(); i++ {
-			if err := elemEnc(st, v.Index(i)); err != nil {
-				return err
+		return st.Array(isStruct, func() error {
+			for i := 0; i < v.Len(); i++ {
+				if err := elemEnc(st, v.Index(i)); err != nil {
+					return err
+				}
 			}
-		}
-		return nil
+			return nil
+		})
 	}
 }
 
@@ -353,14 +354,15 @@ type structFieldEncoder struct {
 type structEncoder []structFieldEncoder
 
 func (fs structEncoder) encode(st *fragments.Encoder, v reflect.Value) error {
-	st.Struct()
-	for _, f := range fs {
-		fv := v.FieldByIndex(f.idx)
-		if err := f.enc(st, fv); err != nil {
-			return err
+	return st.Struct(func() error {
+		for _, f := range fs {
+			fv := v.FieldByIndex(f.idx)
+			if err := f.enc(st, fv); err != nil {
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func newStructEncoder(t reflect.Type) fragments.EncoderFunc {
@@ -400,35 +402,48 @@ func newVarDictEncoder(fs *structInfo) fragments.EncoderFunc {
 	})
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		add := st.DynamicArray(true)
-		for _, f := range fs.VarDictFields {
-			fv := v.FieldByIndex(f.Index)
-			if fv.IsZero() && !f.EncodeZeroValue {
-				continue
+		st.Array(true, func() error {
+			for _, f := range fs.VarDictFields {
+				fv := v.FieldByIndex(f.Index)
+				if fv.IsZero() && !f.EncodeZeroValue {
+					continue
+				}
+
+				err := st.Struct(func() error {
+					if err := kEnc(st, f.key); err != nil {
+						return err
+					}
+					if err := vEnc(st, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					return err
+				}
 			}
 
-			add()
-			if err := kEnc(st, f.key); err != nil {
-				return err
+			other := v.FieldByIndex(fs.VarDictMap.Index)
+			ks := other.MapKeys()
+			slices.SortFunc(ks, kCmp)
+			for _, mk := range ks {
+				mv := other.MapIndex(mk)
+				err := st.Struct(func() error {
+					if err := kEnc(st, mk); err != nil {
+						return err
+					}
+					if err := vEnc(st, mv); err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					return err
+				}
 			}
-			if err := vEnc(st, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
-				return err
-			}
-		}
 
-		other := v.FieldByIndex(fs.VarDictMap.Index)
-		ks := other.MapKeys()
-		slices.SortFunc(ks, kCmp)
-		for _, mk := range ks {
-			mv := other.MapIndex(mk)
-			add()
-			if err := kEnc(st, mk); err != nil {
-				return err
-			}
-			if err := vEnc(st, mv); err != nil {
-				return err
-			}
-		}
+			return nil
+		})
 
 		return nil
 	}
@@ -448,17 +463,23 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		ks := v.MapKeys()
 		slices.SortFunc(ks, kCmp)
-		st.Array(v.Len(), true)
-		for _, mk := range ks {
-			mv := v.MapIndex(mk)
-			st.Struct()
-			if err := kEnc(st, mk); err != nil {
-				return err
+		return st.Array(true, func() error {
+			for _, mk := range ks {
+				mv := v.MapIndex(mk)
+				err := st.Struct(func() error {
+					if err := kEnc(st, mk); err != nil {
+						return err
+					}
+					if err := vEnc(st, mv); err != nil {
+						return err
+					}
+					return nil
+				})
+				if err != nil {
+					return err
+				}
 			}
-			if err := vEnc(st, mv); err != nil {
-				return err
-			}
-		}
-		return nil
+			return nil
+		})
 	}
 }
