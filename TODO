@@ -17,3 +17,10 @@ a known key->signature(value) mapping (like the dbus.Message optional
 headers).
 
 Figure out an approach to fuzz Marshal/Unmarshal.
+
+Break up Marshaler/Unmarshaler interfaces a bit more. Signature is
+only needed when encoding/decoding to a Variant or a message
+body. AlignDBus is only necessary if the value ends up in an empty
+array, for the weird start padding on zero-length arrays thing. Many
+values could implement just MarshalDBus/UnmarshalDBus and live happily
+ever after.
