@@ -10,46 +10,6 @@ import (
 )
 
 func TestTypeDecoder(t *testing.T) {
-	type Simple struct {
-		A int16
-		B bool
-	}
-	type Nested struct {
-		A byte
-		B Simple
-	}
-	type Embedded struct {
-		Simple
-		C byte
-	}
-	type EmbeddedShadow struct {
-		Simple
-		B byte
-	}
-	type Embedded_P struct {
-		*Simple
-		C byte
-	}
-	type Embedded_PV struct {
-		Embedded_P
-	}
-	type Embedded_PVP struct {
-		*Embedded_PV
-		D byte
-	}
-	type NestedSelfMashalerVal struct {
-		A byte
-		B SelfMarshalerVal
-	}
-	type NestedSelfMarshalerPtr struct {
-		A byte
-		B SelfMarshalerPtr
-	}
-	type NestedSelfMarshalerPtrPtr struct {
-		A byte
-		B *SelfMarshalerPtr
-	}
-
 	type testCase struct {
 		in      []byte
 		want    any

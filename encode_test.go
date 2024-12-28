@@ -6,79 +6,9 @@ import (
 	"testing"
 
 	"github.com/danderson/dbus"
-	"github.com/danderson/dbus/fragments"
 )
 
-type SelfMarshalerVal struct {
-	B byte
-}
-
-func (s SelfMarshalerVal) MarshalDBus(st *fragments.Encoder) error {
-	st.Pad(3)
-	st.Uint16(uint16(s.B) + 1)
-	return nil
-}
-
-func (s SelfMarshalerVal) UnmarshalDBus(st *fragments.Decoder) error {
-	st.Pad(3)
-	u16, err := st.Uint16()
-	if err != nil {
-		return err
-	}
-	s.B = byte(u16) - 1
-	return nil
-}
-
-func (s SelfMarshalerVal) AlignDBus() int { return 3 }
-
-func (s SelfMarshalerVal) SignatureDBus() dbus.Signature { return "q" }
-
-type SelfMarshalerPtr struct {
-	B byte
-}
-
-func (s *SelfMarshalerPtr) MarshalDBus(st *fragments.Encoder) error {
-	st.Pad(3)
-	st.Uint16(uint16(s.B) + 1)
-	return nil
-}
-
-func (s *SelfMarshalerPtr) UnmarshalDBus(st *fragments.Decoder) error {
-	st.Pad(3)
-	u16, err := st.Uint16()
-	if err != nil {
-		return err
-	}
-	s.B = byte(u16) - 1
-	return nil
-}
-
-func (s *SelfMarshalerPtr) AlignDBus() int { return 3 }
-
-func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature { return "q" }
-
 func TestTypeEncoder(t *testing.T) {
-	type Simple struct {
-		A int16
-		B bool
-	}
-	type Nested struct {
-		A byte
-		B Simple
-	}
-	type Embedded struct {
-		Simple
-		C byte
-	}
-	type EmbeddedShadow struct {
-		Simple
-		B byte
-	}
-	type NestedSelfMarshalerPtr struct {
-		A byte
-		B SelfMarshalerPtr
-	}
-
 	var be, le = binary.BigEndian, binary.LittleEndian
 	encName := map[binary.AppendByteOrder]string{
 		be: "BE",
