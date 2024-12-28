@@ -59,8 +59,6 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 		return nil, fmt.Errorf("getting DBus client ID: %w", err)
 	}
 
-	log.Print(ret.clientID)
-
 	return ret, nil
 }
 
