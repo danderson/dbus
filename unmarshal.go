@@ -532,7 +532,7 @@ func (vd *varDictDecoder) decode(d *fragments.Decoder, v reflect.Value) error {
 			return err
 		}
 
-		field, ok := vd.byKey[key.Elem().String()]
+		field, ok := vd.byKey[fmt.Sprint(key.Elem())]
 		if ok {
 			fv := fieldByIndexAlloc(v, field.Index)
 			inner := val.Elem().Interface().(Variant).Value
@@ -575,7 +575,7 @@ func newVarDictDecoder(fs *structInfo) fragments.DecoderFunc {
 	}
 
 	for _, f := range fs.VarDictFields {
-		dec.byKey[f.key.String()] = varDictDecoderField{
+		dec.byKey[fmt.Sprint(f.key)] = varDictDecoderField{
 			Name:  f.Name,
 			Index: allocSteps(fs.Type, f.Index),
 			Type:  f.Type,

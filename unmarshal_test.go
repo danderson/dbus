@@ -254,6 +254,25 @@ func TestUnmarshal(t *testing.T) {
 			},
 		})),
 
+		ok([]byte{
+			0x00, 0x00, 0x00, 0x14,
+			0x00, 0x00, 0x00, 0x00, // pad to struct
+
+			0x01,             // key=1
+			0x01, 0x71, 0x00, // signature (uint16)
+			0x00, 0x2a, // val=42
+
+			0x00, 0x00, // pad to struct
+
+			0x02,             // key=2
+			0x01, 0x73, 0x00, // signature (string)
+			0x00, 0x00, 0x00, 0x03, // str len
+			0x66, 0x6f, 0x6f, 0x00, // val="foo"
+		}, ptr(VarDictByte{
+			A: 42,
+			B: "foo",
+		})),
+
 		fail(nil, nil),
 		fail([]byte{0x00, 0x2a}, ptr(SelfMarshalerVal{})),
 		fail([]byte{
