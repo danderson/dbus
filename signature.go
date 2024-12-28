@@ -67,6 +67,8 @@ func (s Signature) Type() reflect.Type {
 		return reflect.TypeFor[Variant]()
 	case 'g':
 		return reflect.TypeFor[Signature]()
+	case 'o':
+		return reflect.TypeFor[ObjectPath]()
 	case 'a':
 		elem := s[1:].Type()
 		if elem == nil {
