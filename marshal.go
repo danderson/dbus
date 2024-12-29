@@ -1,10 +1,12 @@
 package dbus
 
 import (
+	"cmp"
 	"fmt"
 	"log"
 	"math"
 	"reflect"
+	"slices"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -390,20 +392,59 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	kEnc := encoders.Get(kt)
 	vt := t.Elem()
 	vEnc := encoders.Get(vt)
+	kSort := newMapKeySorter(kt)
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		ln := v.Len()
-		st.Array(ln, true)
-		iter := v.MapRange()
-		for iter.Next() {
+		ks := v.MapKeys()
+		kSort(ks)
+		st.Array(v.Len(), true)
+		for _, mk := range ks {
+			mv := v.MapIndex(mk)
 			st.Struct()
-			if err := kEnc(st, iter.Key()); err != nil {
+			if err := kEnc(st, mk); err != nil {
 				return err
 			}
-			if err := vEnc(st, iter.Value()); err != nil {
+			if err := vEnc(st, mv); err != nil {
 				return err
 			}
 		}
 		return nil
+	}
+}
+
+func newMapKeySorter(t reflect.Type) func([]reflect.Value) {
+	var compare func(a, b reflect.Value) int
+	switch t.Kind() {
+	case reflect.Bool:
+		compare = func(a, b reflect.Value) int {
+			if a.Bool() == b.Bool() {
+				return 0
+			}
+			if !a.Bool() {
+				return -1
+			}
+			return 1
+		}
+	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		compare = func(a, b reflect.Value) int {
+			return cmp.Compare(a.Int(), b.Int())
+		}
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		compare = func(a, b reflect.Value) int {
+			return cmp.Compare(a.Uint(), b.Uint())
+		}
+	case reflect.Float32, reflect.Float64:
+		compare = func(a, b reflect.Value) int {
+			return cmp.Compare(a.Float(), b.Float())
+		}
+	case reflect.String:
+		compare = func(a, b reflect.Value) int {
+			return cmp.Compare(a.String(), b.String())
+		}
+	default:
+		panic("invalid map key type")
+	}
+	return func(vs []reflect.Value) {
+		slices.SortFunc(vs, compare)
 	}
 }

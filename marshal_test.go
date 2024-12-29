@@ -265,13 +265,46 @@ func TestMarshal(t *testing.T) {
 			0x00,
 		}},
 
-		// no map tests here. The encoding is unstable due to
-		// unpredictable map iteration ordering. The protocol doesn't
-		// mind, but the tests do.
-		//
-		// Instead, map tests are provided via the decode testing,
-		// which includes a check for round-trippability
-		// (i.e. decode(encode(X)) == X) and tests maps.
+		{map[uint16]string{
+			1: "foo",
+			2: "bar",
+		}, be, []byte{
+			0x00, 0x00, 0x00, 0x02, // array len
+			0x00, 0x00, 0x00, 0x00, // pad to struct
+
+			0x00, 0x01, // key=1
+			0x00, 0x00, // pad
+			0x00, 0x00, 0x00, 0x03, // str len
+			0x66, 0x6f, 0x6f, // "foo"
+			0x00, // str terminator
+
+			0x00, 0x00, 0x00, 0x00, // pad to struct
+			0x00, 0x02, // key=2
+			0x00, 0x00, // pad
+			0x00, 0x00, 0x00, 0x03, // str len
+			0x62, 0x61, 0x72, // "bar"
+			0x00, // str terminator
+		}},
+		{map[uint16]string{
+			1: "foo",
+			2: "bar",
+		}, le, []byte{
+			0x02, 0x00, 0x00, 0x00, // array len
+			0x00, 0x00, 0x00, 0x00, // pad to struct
+
+			0x01, 0x00, // key=1
+			0x00, 0x00, // pad
+			0x03, 0x00, 0x00, 0x00, // str len
+			0x66, 0x6f, 0x6f, // "foo"
+			0x00, // str terminator
+
+			0x00, 0x00, 0x00, 0x00, // pad to struct
+			0x02, 0x00, // key=2
+			0x00, 0x00, // pad
+			0x03, 0x00, 0x00, 0x00, // str len
+			0x62, 0x61, 0x72, // "bar"
+			0x00, // str terminator
+		}},
 
 		{func() int { return 2 }, le, nil},
 		{func() int { return 2 }, be, nil},
