@@ -108,6 +108,35 @@ func (e *Encoder) Array(length int, containsStructs bool) {
 	}
 }
 
+// DynamicArray writes the header of an array whose size isn't known
+// upfront.
+//
+// The returned addElement function must be called for each item added
+// to the array.
+//
+// containsStructs indicates whether the array's elements are structs,
+// so that the array header and elements can be padded accordingly
+// even if the array contains no elements.
+//
+// Unlike [Encoder.Array], containsStructs affects the alignment of
+// every array element, so calls to [Encoder.Struct] can be omitted if
+// desired.
+func (e *Encoder) DynamicArray(containsStructs bool) (addElement func()) {
+	e.Pad(4)
+	offset := len(e.Out)
+	e.Uint32(0)
+	if containsStructs {
+		e.Struct()
+	}
+	return func() {
+		ln := e.Order.Uint32(e.Out[offset:])
+		e.Order.PutUint32(e.Out[offset:], ln+1)
+		if containsStructs {
+			e.Struct()
+		}
+	}
+}
+
 // Struct aligns the output suitably for the start of a struct.
 func (e *Encoder) Struct() {
 	e.Pad(8)
