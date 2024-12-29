@@ -132,6 +132,12 @@ func (d *mustDecoder) MustArray(containsStructs bool, wantLen int) {
 	}
 }
 
+func (d *mustDecoder) MustStruct() {
+	if err := d.Struct(); err != nil {
+		d.t.Fatalf("Struct() got err: %v", err)
+	}
+}
+
 func (d *mustDecoder) MustByteOrderFlag(want fragments.ByteOrder) {
 	if err := d.ByteOrderFlag(); err != nil {
 		d.t.Fatalf("ByteOrderFlag() got err: %v", err)
@@ -230,13 +236,13 @@ func TestDecoder(t *testing.T) {
 				0x2a,
 			},
 			func(d *mustDecoder) {
-				d.Struct()
+				d.MustStruct()
 				d.MustUint64(66)
-				d.Struct()
+				d.MustStruct()
 				d.MustUint32(42)
-				d.Struct()
+				d.MustStruct()
 				d.MustUint16(66)
-				d.Struct()
+				d.MustStruct()
 				d.MustUint8(42)
 			},
 		},
@@ -276,9 +282,9 @@ func TestDecoder(t *testing.T) {
 			},
 			func(d *mustDecoder) {
 				d.MustArray(true, 2)
-				d.Struct()
+				d.MustStruct()
 				d.MustUint16(1)
-				d.Struct()
+				d.MustStruct()
 				d.MustUint16(2)
 			},
 		},
@@ -337,15 +343,16 @@ func TestDecoder(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			b := bytes.NewBuffer(tc.in)
 			d := mustDecoder{
 				t: t,
 				Decoder: &fragments.Decoder{
 					Order: fragments.BigEndian,
-					In:    tc.in,
+					In:    b,
 				},
 			}
 			tc.decode(&d)
-			if remain := d.Remaining(); remain > 0 {
+			if remain := b.Available(); remain > 0 {
 				t.Fatalf("decoder failed to consume %d trailing bytes", remain)
 			}
 		})

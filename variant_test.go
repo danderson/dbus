@@ -116,7 +116,7 @@ func TestMarshalVariant(t *testing.T) {
 			continue
 		}
 		var gotU dbus.Variant
-		err = dbus.Unmarshal(got, fragments.BigEndian, &gotU)
+		err = dbus.Unmarshal(bytes.NewBuffer(got), fragments.BigEndian, &gotU)
 		if err != nil {
 			t.Errorf("Unmarshal(Marshal(dbus.Variant{%T})) got err: %v", tc.in, err)
 		}

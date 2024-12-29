@@ -2,6 +2,7 @@ package dbus
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"reflect"
@@ -67,7 +68,7 @@ import (
 // DBus cannot represent cyclic or recursive types. Attempting to
 // decode into such values causes Unmarshal to return an
 // [ErrUnrepresentable].
-func Unmarshal(data []byte, ord fragments.ByteOrder, v any) error {
+func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 	if v == nil {
 		return fmt.Errorf("can't unmarshal into nil interface")
 	}
@@ -442,7 +443,9 @@ type structFieldDecoder struct {
 type structDecoder []structFieldDecoder
 
 func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
-	st.Struct()
+	if err := st.Struct(); err != nil {
+		return err
+	}
 	for _, f := range fs {
 		fv := v
 		for i, hop := range f.idx {
@@ -535,7 +538,9 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 		for i := 0; i < ln; i++ {
 			key.Elem().SetZero()
 			val.Elem().SetZero()
-			st.Struct()
+			if err := st.Struct(); err != nil {
+				return err
+			}
 			if err := kDec(st, key.Elem()); err != nil {
 				return err
 			}

@@ -1,6 +1,7 @@
 package dbus_test
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 
@@ -208,7 +209,8 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 		got = reflect.New(reflect.TypeOf(want).Elem()).Interface()
 	}
 
-	err := dbus.Unmarshal(in, fragments.BigEndian, got)
+	b := bytes.NewBuffer(in)
+	err := dbus.Unmarshal(b, fragments.BigEndian, got)
 	if err != nil {
 		if !wantErr {
 			t.Errorf("Unmarshal(..., %T) got err: %v", want, err)
@@ -219,6 +221,8 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 		t.Errorf("Unmarshal(..., %T) decoded successfully, want error", want)
 	} else if diff := cmp.Diff(got, want); diff != "" {
 		t.Errorf("Unmarshal(..., %T) decoded incorrectly (-got+want):\n%s", want, diff)
+	} else if remain := b.Len(); remain != 0 {
+		t.Errorf("Unmarshal(..., %T) left %d bytes unread: % x", want, remain, b.Bytes())
 	} else if testing.Verbose() {
 		t.Logf("Unmarshal(..., %T) = ptr(%#v)", want, reflect.ValueOf(got).Elem().Interface())
 	}

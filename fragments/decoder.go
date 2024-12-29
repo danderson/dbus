@@ -23,8 +23,8 @@ type Decoder struct {
 	// [Decoder.Value]. If mapper is nil, the Decoder functions
 	// normally except that [Decoder.Value] always returns an error.
 	Mapper func(reflect.Type) DecoderFunc
-	// In is the remaining input to read.
-	In []byte
+	// In is the input stream to read.
+	In io.Reader
 
 	// offset is the number of bytes consumed off the front of In so
 	// far. We have to keep track of this because alignment depends on
@@ -33,41 +33,38 @@ type Decoder struct {
 	offset int
 }
 
-func (d *Decoder) advance(n int) {
-	n = min(n, len(d.In))
-	d.In = d.In[n:]
-	d.offset += n
-}
-
-// Remaining reports the number of bytes left to decode.
-func (d *Decoder) Remaining() int {
-	return len(d.In)
+func (d *Decoder) Discard(n int) error {
+	return nil
 }
 
 // Pad consumes padding bytes as needed to make the next read happen
 // at a multiple of align bytes. If the decoder is already correctly
 // aligned, no bytes are consumed.
-func (d *Decoder) Pad(align int) {
+func (d *Decoder) Pad(align int) error {
 	extra := d.offset % align
 	if extra == 0 {
-		return
+		return nil
 	}
-	d.advance(align - extra)
+	skip := align - extra
+	if _, err := io.CopyN(io.Discard, d.In, int64(skip)); err != nil {
+		return err
+	}
+	d.offset = (d.offset + skip) % 8
+	return nil
 }
 
 // Read reads n bytes, with no framing or padding.
 func (d *Decoder) Read(n int) ([]byte, error) {
-	if d.Remaining() < n {
-		return nil, io.ErrUnexpectedEOF
+	bs := make([]byte, n)
+	if _, err := io.ReadFull(d.In, bs); err != nil {
+		return nil, err
 	}
-	ret := d.In[:n]
-	d.advance(n)
-	return ret, nil
+	d.offset = (d.offset + n) % 8
+	return bs, nil
 }
 
 // Bytes reads a DBus byte array.
 func (d *Decoder) Bytes() ([]byte, error) {
-	d.Pad(4)
 	ln, err := d.Uint32()
 	if err != nil {
 		return nil, err
@@ -77,7 +74,6 @@ func (d *Decoder) Bytes() ([]byte, error) {
 
 // Bytes reads a DBus string.
 func (d *Decoder) String() (string, error) {
-	d.Pad(4)
 	ln, err := d.Uint32()
 	if err != nil {
 		return "", err
@@ -91,45 +87,41 @@ func (d *Decoder) String() (string, error) {
 
 // Uint8 reads a uint8.
 func (d *Decoder) Uint8() (uint8, error) {
-	if d.Remaining() < 1 {
-		return 0, io.ErrUnexpectedEOF
+	bs, err := d.Read(1)
+	if err != nil {
+		return 0, err
 	}
-	ret := d.In[0]
-	d.advance(1)
-	return ret, nil
+	return bs[0], nil
 }
 
 // Uint16 reads a uint16.
 func (d *Decoder) Uint16() (uint16, error) {
 	d.Pad(2)
-	if d.Remaining() < 2 {
-		return 0, io.ErrUnexpectedEOF
+	bs, err := d.Read(2)
+	if err != nil {
+		return 0, err
 	}
-	ret := d.Order.Uint16(d.In)
-	d.advance(2)
-	return ret, nil
+	return d.Order.Uint16(bs), nil
 }
 
 // Uint32 reads a uint32.
 func (d *Decoder) Uint32() (uint32, error) {
 	d.Pad(4)
-	if d.Remaining() < 4 {
-		return 0, io.ErrUnexpectedEOF
+	bs, err := d.Read(4)
+	if err != nil {
+		return 0, err
 	}
-	ret := d.Order.Uint32(d.In)
-	d.advance(4)
-	return ret, nil
+	return d.Order.Uint32(bs), nil
 }
 
 // Uint64 reads a uint64.
 func (d *Decoder) Uint64() (uint64, error) {
 	d.Pad(8)
-	if d.Remaining() < 8 {
-		return 0, io.ErrUnexpectedEOF
+	bs, err := d.Read(8)
+	if err != nil {
+		return 0, err
 	}
-	ret := d.Order.Uint64(d.In)
-	d.advance(8)
-	return ret, nil
+	return d.Order.Uint64(bs), nil
 }
 
 // Value reads a value into v, using the [DecoderFunc] provided by
@@ -160,36 +152,37 @@ func (d *Decoder) Value(v any) error {
 // header. When reading an array of structs, the caller must also call
 // [Decoder.Struct] to align with each array element correctly.
 func (d *Decoder) Array(containsStructs bool) (int, error) {
-	d.Pad(4)
 	ln, err := d.Uint32()
 	if err != nil {
 		return 0, err
 	}
 	if containsStructs {
-		d.Struct()
+		if err := d.Struct(); err != nil {
+			return 0, err
+		}
 	}
 	return int(ln), nil
 }
 
 // Struct aligns the input suitably for the start of a struct.
-func (d *Decoder) Struct() {
-	d.Pad(8)
+func (d *Decoder) Struct() error {
+	return d.Pad(8)
 }
 
 // ByteOrderFlag reads a DBus byte order flag byte, and sets
 // [Decoder.Order] to match it.
 func (d *Decoder) ByteOrderFlag() error {
-	bs, err := d.Read(1)
+	v, err := d.Uint8()
 	if err != nil {
 		return err
 	}
-	switch bs[0] {
+	switch v {
 	case 'B':
 		d.Order = BigEndian
 	case 'l':
 		d.Order = LittleEndian
 	default:
-		return fmt.Errorf("unknown byte order flag %q", bs[0])
+		return fmt.Errorf("unknown byte order flag %q", v)
 	}
 	return nil
 }
