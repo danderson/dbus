@@ -1,7 +1,6 @@
 package fragments
 
 import (
-	"encoding/binary"
 	"errors"
 	"reflect"
 )
@@ -16,7 +15,7 @@ type EncoderFunc func(enc *Encoder, val reflect.Value) error
 // rules, except for [Encoder.Write] which outputs bytes verbatim.
 type Encoder struct {
 	// Order is the byte order to use when encoding multi-byte values.
-	Order binary.AppendByteOrder
+	Order ByteOrder
 	// Mapper provides [EncoderFunc]s for types given to
 	// [Encoder.Value]. If mapper is nil, the Encoder functions
 	// normally except that [Encoder.Value] always returns an error.
@@ -112,4 +111,10 @@ func (e *Encoder) Array(length int, containsStructs bool) {
 // Struct aligns the output suitably for the start of a struct.
 func (e *Encoder) Struct() {
 	e.Pad(8)
+}
+
+// ByteOrderFlag writes the DBus byte order flag byte ('l' or 'B')
+// that matches [Encoder.Order].
+func (e *Encoder) ByteOrderFlag() {
+	e.Write([]byte{e.Order.dbusFlag()})
 }

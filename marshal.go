@@ -1,7 +1,6 @@
 package dbus
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
@@ -53,7 +52,7 @@ import (
 // DBus cannot represent cyclic or recursive types, and Marshal does
 // not handle them. Attempting to encode such values causes Marshal to
 // return an [ErrUnrepresentable].
-func Marshal(v any, ord binary.AppendByteOrder) ([]byte, error) {
+func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
 	return MarshalAppend(nil, v, ord)
 }
 
@@ -62,7 +61,7 @@ func Marshal(v any, ord binary.AppendByteOrder) ([]byte, error) {
 //
 // Additional padding bytes may be appended prior to the start of the
 // marshaled value, to respect DBus alignment rules.
-func MarshalAppend(bs []byte, v any, ord binary.AppendByteOrder) ([]byte, error) {
+func MarshalAppend(bs []byte, v any, ord fragments.ByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
 	enc := encoders.GetRecover(val.Type())
 	st := fragments.Encoder{

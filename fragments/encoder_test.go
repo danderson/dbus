@@ -2,7 +2,6 @@ package fragments_test
 
 import (
 	"bytes"
-	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -179,12 +178,23 @@ func TestEncoder(t *testing.T) {
 				0x75, 0x69, 0x6e, 0x74, 0x31, 0x36, // "uint16"
 			},
 		},
+
+		{
+			"byte order flag",
+			func(e *fragments.Encoder) {
+				e.Order = fragments.BigEndian
+				e.ByteOrderFlag()
+				e.Order = fragments.LittleEndian
+				e.ByteOrderFlag()
+			},
+			[]byte{'B', 'l'},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			e := fragments.Encoder{
-				Order: binary.BigEndian,
+				Order: fragments.BigEndian,
 			}
 			tc.in(&e)
 			if got := e.Out; !bytes.Equal(got, tc.want) {

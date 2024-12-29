@@ -2,7 +2,6 @@ package fragments_test
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"reflect"
 	"testing"
@@ -130,6 +129,15 @@ func (d *mustDecoder) MustArray(containsStructs bool, wantLen int) {
 	}
 	if testing.Verbose() {
 		d.t.Logf("Array(%v) = %d elements", containsStructs, gotLen)
+	}
+}
+
+func (d *mustDecoder) MustByteOrderFlag(want fragments.ByteOrder) {
+	if err := d.ByteOrderFlag(); err != nil {
+		d.t.Fatalf("ByteOrderFlag() got err: %v", err)
+	}
+	if got := d.Order; got != want {
+		d.t.Fatalf("ByteOrderFlag() set byte order %s, want %s", got, want)
 	}
 }
 
@@ -313,6 +321,18 @@ func TestDecoder(t *testing.T) {
 				d.MustValue(&u16)
 			},
 		},
+
+		{
+			"byte order flag",
+			[]byte{'B', 'l', '?'},
+			func(d *mustDecoder) {
+				d.MustByteOrderFlag(fragments.BigEndian)
+				d.MustByteOrderFlag(fragments.LittleEndian)
+				if err := d.ByteOrderFlag(); err == nil {
+					t.Fatalf("ByteOrderFlag did not error on invalid byte order")
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -320,7 +340,7 @@ func TestDecoder(t *testing.T) {
 			d := mustDecoder{
 				t: t,
 				Decoder: &fragments.Decoder{
-					Order: binary.BigEndian,
+					Order: fragments.BigEndian,
 					In:    tc.in,
 				},
 			}

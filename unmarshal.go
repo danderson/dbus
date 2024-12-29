@@ -1,7 +1,6 @@
 package dbus
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
@@ -68,7 +67,7 @@ import (
 // DBus cannot represent cyclic or recursive types. Attempting to
 // decode into such values causes Unmarshal to return an
 // [ErrUnrepresentable].
-func Unmarshal(data []byte, ord binary.ByteOrder, v any) error {
+func Unmarshal(data []byte, ord fragments.ByteOrder, v any) error {
 	if v == nil {
 		return fmt.Errorf("can't unmarshal into nil interface")
 	}

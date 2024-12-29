@@ -1,11 +1,11 @@
 package dbus_test
 
 import (
-	"encoding/binary"
 	"reflect"
 	"testing"
 
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/fragments"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -208,7 +208,7 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 		got = reflect.New(reflect.TypeOf(want).Elem()).Interface()
 	}
 
-	err := dbus.Unmarshal(in, binary.BigEndian, got)
+	err := dbus.Unmarshal(in, fragments.BigEndian, got)
 	if err != nil {
 		if !wantErr {
 			t.Errorf("Unmarshal(..., %T) got err: %v", want, err)
@@ -225,7 +225,7 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 }
 
 func testRoundTrip(t *testing.T, val any) {
-	bs, err := dbus.Marshal(val, binary.BigEndian)
+	bs, err := dbus.Marshal(val, fragments.BigEndian)
 	if err != nil {
 		t.Errorf("re-Marshal(%T) got err: %v", val, err)
 	}

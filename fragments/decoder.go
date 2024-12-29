@@ -1,7 +1,6 @@
 package fragments
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -19,7 +18,7 @@ type DecoderFunc func(dec *Decoder, val reflect.Value) error
 // which reads bytes verbatim.
 type Decoder struct {
 	// Order is the byte order to use when reading multi-byte values.
-	Order binary.ByteOrder
+	Order ByteOrder
 	// Mapper provides [DecoderFunc]s for types given to
 	// [Decoder.Value]. If mapper is nil, the Decoder functions
 	// normally except that [Decoder.Value] always returns an error.
@@ -175,4 +174,22 @@ func (d *Decoder) Array(containsStructs bool) (int, error) {
 // Struct aligns the input suitably for the start of a struct.
 func (d *Decoder) Struct() {
 	d.Pad(8)
+}
+
+// ByteOrderFlag reads a DBus byte order flag byte, and sets
+// [Decoder.Order] to match it.
+func (d *Decoder) ByteOrderFlag() error {
+	bs, err := d.Read(1)
+	if err != nil {
+		return err
+	}
+	switch bs[0] {
+	case 'B':
+		d.Order = BigEndian
+	case 'l':
+		d.Order = LittleEndian
+	default:
+		return fmt.Errorf("unknown byte order flag %q", bs[0])
+	}
+	return nil
 }

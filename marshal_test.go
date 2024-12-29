@@ -2,22 +2,22 @@ package dbus_test
 
 import (
 	"bytes"
-	"encoding/binary"
 	"testing"
 
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/fragments"
 )
 
 func TestMarshal(t *testing.T) {
-	var be, le = binary.BigEndian, binary.LittleEndian
-	encName := map[binary.AppendByteOrder]string{
+	var be, le = fragments.BigEndian, fragments.LittleEndian
+	encName := map[fragments.ByteOrder]string{
 		be: "BE",
 		le: "LE",
 	}
 
 	tests := []struct {
 		in   any
-		enc  binary.AppendByteOrder
+		enc  fragments.ByteOrder
 		want []byte // empty means want error
 	}{
 		{byte(5), le, []byte{0x05}},
