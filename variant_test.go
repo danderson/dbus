@@ -43,7 +43,7 @@ func TestMarshalVariant(t *testing.T) {
 		{
 			[]uint16{1, 2, 3},
 			[]byte{
-				// Signature string "b"
+				// Signature string "an"
 				0x02, 0x61, 0x71, 0x00,
 				// val
 				0x00, 0x00, 0x00, 0x03,
@@ -52,6 +52,17 @@ func TestMarshalVariant(t *testing.T) {
 				0x00, 0x03,
 			},
 			dbus.Variant{[]uint16{1, 2, 3}},
+		},
+
+		{
+			dbus.Signature("uu"),
+			[]byte{
+				// Signature string "g"
+				0x01, 0x67, 0x00,
+				// val
+				0x02, 0x75, 0x75, 0x00,
+			},
+			dbus.Variant{dbus.Signature("uu")},
 		},
 
 		{
