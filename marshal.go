@@ -1,7 +1,6 @@
 package dbus
 
 import (
-	"cmp"
 	"fmt"
 	"log"
 	"math"
@@ -367,36 +366,88 @@ func (fs structEncoder) encode(st *fragments.Encoder, v reflect.Value) error {
 func newStructEncoder(t reflect.Type) fragments.EncoderFunc {
 	debugEncoder("%s{}", t)
 	ret := structEncoder{}
-	for _, f := range reflect.VisibleFields(t) {
-		if f.Anonymous || !f.IsExported() {
-			continue
-		}
-		debugEncoder("%s.%s{%s}", t, f.Name, f.Type)
-		fEnc := encoders.Get(f.Type)
-		ret = append(ret, structFieldEncoder{f.Index, fEnc})
+	fs, err := getStructInfo(t)
+	if err != nil {
+		return newErrEncoder(t, err.Error())
 	}
-	if len(ret) == 0 {
+	if fs.VarDictMap != nil {
+		return newVarDictEncoder(fs)
+	} else if len(fs.StructFields) == 0 {
 		return newErrEncoder(t, "no exported struct fields")
 	}
+	for _, f := range fs.StructFields {
+		debugEncoder("%s.%s{%s}", t, f.Name, f.Type)
+		var fEnc fragments.EncoderFunc
+		if f.UseVariantEncoding {
+			varEnc := encoders.Get(variantType)
+			fEnc = func(e *fragments.Encoder, v reflect.Value) error {
+				return varEnc(e, reflect.ValueOf(Variant{v.Interface()}))
+			}
+		} else {
+			fEnc = encoders.Get(f.Type)
+		}
+		ret = append(ret, structFieldEncoder{f.Index, fEnc})
+	}
 	return ret.encode
+}
+
+func newVarDictEncoder(fs *structInfo) fragments.EncoderFunc {
+	kEnc := encoders.Get(fs.VarDictMap.Type.Key())
+	vEnc := encoders.Get(variantType)
+	kCmp := newMapKeyCompare(fs.VarDictMap.Type.Key())
+	slices.SortFunc(fs.VarDictFields, func(a, b varDictField) int {
+		return kCmp(a.key, b.key)
+	})
+
+	return func(st *fragments.Encoder, v reflect.Value) error {
+		add := st.DynamicArray(true)
+		for _, f := range fs.VarDictFields {
+			fv := v.FieldByIndex(f.Index)
+			if fv.IsZero() && !f.EncodeZeroValue {
+				continue
+			}
+
+			add()
+			if err := kEnc(st, f.key); err != nil {
+				return err
+			}
+			if err := vEnc(st, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
+				return err
+			}
+		}
+
+		other := v.FieldByIndex(fs.VarDictMap.Index)
+		ks := other.MapKeys()
+		slices.SortFunc(ks, kCmp)
+		for _, mk := range ks {
+			mv := other.MapIndex(mk)
+			add()
+			if err := kEnc(st, mk); err != nil {
+				return err
+			}
+			if err := vEnc(st, mv); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
 }
 
 func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	debugEncoder("map[%s]%s{}", t.Key(), t.Elem())
 	kt := t.Key()
-	switch kt.Kind() {
-	case reflect.Bool, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.String:
-	default:
-		return newErrEncoder(t, fmt.Sprintf("unrepresentable map key type %s", kt))
+	if !isValidMapKeyType(kt) {
+		return newErrEncoder(t, fmt.Sprintf("invalid map key type %s", kt))
 	}
 	kEnc := encoders.Get(kt)
 	vt := t.Elem()
 	vEnc := encoders.Get(vt)
-	kSort := newMapKeySorter(kt)
+	kCmp := newMapKeyCompare(kt)
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		ks := v.MapKeys()
-		kSort(ks)
+		slices.SortFunc(ks, kCmp)
 		st.Array(v.Len(), true)
 		for _, mk := range ks {
 			mv := v.MapIndex(mk)
@@ -409,42 +460,5 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 			}
 		}
 		return nil
-	}
-}
-
-func newMapKeySorter(t reflect.Type) func([]reflect.Value) {
-	var compare func(a, b reflect.Value) int
-	switch t.Kind() {
-	case reflect.Bool:
-		compare = func(a, b reflect.Value) int {
-			if a.Bool() == b.Bool() {
-				return 0
-			}
-			if !a.Bool() {
-				return -1
-			}
-			return 1
-		}
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		compare = func(a, b reflect.Value) int {
-			return cmp.Compare(a.Int(), b.Int())
-		}
-	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		compare = func(a, b reflect.Value) int {
-			return cmp.Compare(a.Uint(), b.Uint())
-		}
-	case reflect.Float32, reflect.Float64:
-		compare = func(a, b reflect.Value) int {
-			return cmp.Compare(a.Float(), b.Float())
-		}
-	case reflect.String:
-		compare = func(a, b reflect.Value) int {
-			return cmp.Compare(a.String(), b.String())
-		}
-	default:
-		panic("invalid map key type")
-	}
-	return func(vs []reflect.Value) {
-		slices.SortFunc(vs, compare)
 	}
 }

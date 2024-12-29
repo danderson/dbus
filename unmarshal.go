@@ -442,21 +442,25 @@ type structFieldDecoder struct {
 
 type structDecoder []structFieldDecoder
 
+func fieldByIndexAlloc(v reflect.Value, idx [][]int) reflect.Value {
+	for i, hop := range idx {
+		if i > 0 {
+			if v.IsNil() {
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		v = v.FieldByIndex(hop)
+	}
+	return v
+}
+
 func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
 	if err := st.Struct(); err != nil {
 		return err
 	}
 	for _, f := range fs {
-		fv := v
-		for i, hop := range f.idx {
-			if i > 0 {
-				if fv.IsNil() {
-					fv.Set(reflect.New(fv.Type().Elem()))
-				}
-				fv = fv.Elem()
-			}
-			fv = fv.FieldByIndex(hop)
-		}
+		fv := fieldByIndexAlloc(v, f.idx)
 		if err := f.dec(st, fv); err != nil {
 			return err
 		}
@@ -465,12 +469,18 @@ func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
 }
 
 func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
-	debugDecoder("%s{}", t)
 	ret := structDecoder{}
-	for _, f := range reflect.VisibleFields(t) {
-		if f.Anonymous || !f.IsExported() {
-			continue
-		}
+	fs, err := getStructInfo(t)
+	if err != nil {
+		return newErrDecoder(t, err.Error())
+	}
+	if fs.VarDictMap != nil {
+		return newVarDictDecoder(fs)
+	} else if len(fs.StructFields) == 0 {
+		return newErrDecoder(t, "no exported struct fields")
+	}
+	debugDecoder("%s{}", t)
+	for _, f := range fs.StructFields {
 		debugDecoder("%s.%s{%s}", t, f.Name, f.Type)
 		fDec := decoders.Get(f.Type)
 		fd := structFieldDecoder{
@@ -480,10 +490,95 @@ func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 
 		ret = append(ret, fd)
 	}
-	if len(ret) == 0 {
-		return newErrDecoder(t, "no exported struct fields")
-	}
 	return ret.decode
+}
+
+type varDictDecoderField struct {
+	Name  string
+	Index [][]int
+	Type  reflect.Type
+}
+
+type varDictDecoder struct {
+	keyType  reflect.Type
+	kDec     fragments.DecoderFunc
+	vDec     fragments.DecoderFunc
+	mapIndex [][]int
+	byKey    map[string]varDictDecoderField
+}
+
+func (vd *varDictDecoder) decode(d *fragments.Decoder, v reflect.Value) error {
+	ln, err := d.Array(true)
+	if err != nil {
+		return err
+	}
+
+	other := fieldByIndexAlloc(v, vd.mapIndex)
+	otherInit := false
+
+	key := reflect.New(vd.keyType)
+	val := reflect.New(variantType)
+	for range ln {
+		key.Elem().SetZero()
+		val.Elem().SetZero()
+
+		if err := d.Struct(); err != nil {
+			return err
+		}
+		if err := vd.kDec(d, key.Elem()); err != nil {
+			return err
+		}
+		if err := vd.vDec(d, val.Elem()); err != nil {
+			return err
+		}
+
+		field, ok := vd.byKey[key.Elem().String()]
+		if ok {
+			fv := fieldByIndexAlloc(v, field.Index)
+			inner := val.Elem().Interface().(Variant).Value
+			innerVal := reflect.ValueOf(inner)
+			if fv.Kind() == reflect.Int8 && innerVal.Kind() == reflect.Uint8 {
+				fv.SetInt(int64(int8(inner.(uint8))))
+			} else if fv.Type() == innerVal.Type() {
+				fv.Set(innerVal)
+			} else {
+				return fmt.Errorf("invalid type %s received for vardict field %s (%s)", reflect.TypeOf(inner), field.Name, fv.Type())
+			}
+		} else {
+			if !otherInit {
+				otherInit = true
+				if other.IsNil() {
+					other.Set(reflect.MakeMap(other.Type()))
+				} else {
+					other.Clear()
+				}
+			}
+			other.SetMapIndex(key.Elem(), val.Elem())
+		}
+	}
+
+	return nil
+}
+
+func newVarDictDecoder(fs *structInfo) fragments.DecoderFunc {
+	debugDecoder("%s{} (vardict)", fs.Name)
+	dec := &varDictDecoder{
+		keyType:  fs.VarDictMap.Type.Key(),
+		kDec:     decoders.Get(fs.VarDictMap.Type.Key()),
+		vDec:     decoders.Get(variantType),
+		mapIndex: allocSteps(fs.Type, fs.VarDictMap.Index),
+		byKey:    map[string]varDictDecoderField{},
+	}
+
+	for _, f := range fs.VarDictFields {
+		dec.byKey[f.key.String()] = varDictDecoderField{
+			Name:  f.Name,
+			Index: allocSteps(fs.Type, f.Index),
+			Type:  f.Type,
+		}
+	}
+
+	return dec.decode
 }
 
 // allocSteps partitions a multi-hop traversal of struct fields into
