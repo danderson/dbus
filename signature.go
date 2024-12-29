@@ -34,6 +34,56 @@ func (s *Signature) UnmarshalDBus(st *fragments.Decoder) error {
 func (s Signature) AlignDBus() int           { return 1 }
 func (s Signature) SignatureDBus() Signature { return "g" }
 
+func (s Signature) Type() reflect.Type {
+	if s == "" {
+		return nil
+	}
+	switch s[0] {
+	case '(':
+		return nil // TODO: support dynamic structs
+	case '{':
+		return nil // TODO: support dict entries
+	case 'b':
+		return reflect.TypeFor[bool]()
+	case 'y':
+		return reflect.TypeFor[uint8]()
+	case 'n':
+		return reflect.TypeFor[int16]()
+	case 'q':
+		return reflect.TypeFor[uint16]()
+	case 'i':
+		return reflect.TypeFor[int32]()
+	case 'u':
+		return reflect.TypeFor[uint32]()
+	case 'x':
+		return reflect.TypeFor[int64]()
+	case 't':
+		return reflect.TypeFor[uint64]()
+	case 'd':
+		return reflect.TypeFor[float64]()
+	case 's':
+		return reflect.TypeFor[string]()
+	case 'v':
+		return reflect.TypeFor[Variant]()
+	case 'a':
+		elem := s[1:].Type()
+		if elem == nil {
+			return nil
+		}
+		return reflect.SliceOf(elem)
+	default:
+		return nil
+	}
+}
+
+func (s Signature) Value() reflect.Value {
+	t := s.Type()
+	if t == nil {
+		return reflect.Value{}
+	}
+	return reflect.New(t)
+}
+
 type signer interface {
 	SignatureDBus() Signature
 }

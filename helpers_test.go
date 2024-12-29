@@ -32,6 +32,21 @@ type EmbeddedShadow struct {
 	B byte
 }
 
+// Arrays is a struct with various degrees of complicated arrays
+// inside.
+type Arrays struct {
+	A []string
+	B []Simple
+	C [][]Nested
+}
+
+// Tree is a self-referential struct that can't be represented in the
+// DBus wire format.
+type Tree struct {
+	Left  *Tree
+	Right *Tree
+}
+
 // NestedSelfMashalerVal is a struct with a struct field that
 // implements dbus.Marshaler/dbus.Unmarshaler with value method
 // receivers. NestedSelfMashalerVal cannot be unmarshaled, because

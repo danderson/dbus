@@ -7,34 +7,6 @@ import (
 )
 
 func TestSignatureOf(t *testing.T) {
-	type Tree struct {
-		Left  *Tree
-		Right *Tree
-	}
-	type Simple struct {
-		A int16
-		B bool
-		C string
-	}
-	type Nested struct {
-		A int64
-		B Simple
-		C *Simple
-	}
-	type Embedded struct {
-		Simple
-		D float64
-	}
-	type EmbedShadow struct {
-		A      bool
-		Simple // B, C visible
-	}
-	type Arrays struct {
-		A []string
-		B []Simple
-		C [][]Nested
-	}
-
 	tests := []struct {
 		in   any
 		want string
@@ -56,13 +28,13 @@ func TestSignatureOf(t *testing.T) {
 		{[4]byte{}, "ay"},
 		{[][]string{}, "aas"},
 		{map[string]int64{}, "a{sx}"},
-		{Simple{}, "(nbs)"},
-		{[]Simple{}, "a(nbs)"},
-		{Nested{}, "(x(nbs)(nbs))"},
-		{[]Nested{}, "a(x(nbs)(nbs))"},
-		{Embedded{}, "(nbsd)"},
-		{EmbedShadow{}, "(bbs)"},
-		{Arrays{}, "(asa(nbs)aa(x(nbs)(nbs)))"},
+		{Simple{}, "(nb)"},
+		{[]Simple{}, "a(nb)"},
+		{Nested{}, "(y(nb))"},
+		{[]Nested{}, "a(y(nb))"},
+		{Embedded{}, "(nby)"},
+		{EmbeddedShadow{}, "(ny)"},
+		{Arrays{}, "(asa(nb)aa(y(nb)))"},
 		{dbus.Variant{int16(0)}, "v"},
 
 		{},
