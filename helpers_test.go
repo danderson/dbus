@@ -154,9 +154,9 @@ func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature { return "q" }
 
 // VarDict is a struct that marshals to a DBus dict of variants.
 type VarDict struct {
-	A     uint16 `dbus:"dictKey=foo"`
-	B     uint32 `dbus:"dictKey=bar,encodeZero"`
-	C     string `dbus:"dictKey=@"`
-	D     int8   `dbus:"dictKey=@"`
+	A     uint16 `dbus:"key=foo"`
+	B     uint32 `dbus:"key=bar,encodeZero"`
+	C     string `dbus:"key=@"`
+	D     int8   `dbus:"key=@"`
 	Other map[string]dbus.Variant
 }

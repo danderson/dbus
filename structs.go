@@ -111,7 +111,7 @@ func getStructField(f reflect.StructField) *structField {
 			ret.UseVariantEncoding = true
 		} else if f == "encodeZero" {
 			ret.EncodeZeroValue = true
-		} else if val, ok := strings.CutPrefix(f, "dictKey="); ok {
+		} else if val, ok := strings.CutPrefix(f, "key="); ok {
 			if val == "@" {
 				val = ret.Name
 			}
