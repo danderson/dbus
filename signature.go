@@ -106,8 +106,8 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 	}
 }
 
-// MustParseSignature parses a DBus signature string into a Signature,
-// or panics if the string is invalid.
+// MustParseSignature is like [ParseSignature], but panics if the
+// input is not a valid type signature.
 func MustParseSignature(sig string) Signature {
 	ret, err := ParseSignature(sig)
 	if err != nil {
@@ -116,43 +116,43 @@ func MustParseSignature(sig string) Signature {
 	return ret
 }
 
+// String returns the string encoding of the Signature, as described
+// in the DBus specification.
 func (s Signature) String() string {
 	switch len(s.parts) {
 	case 0:
 		return ""
 	case 1:
-		return signatureStrForType(s.parts[0])
+		return stringForType(s.parts[0])
 	default:
 		ret := make([]string, len(s.parts))
 		for i, p := range s.parts {
-			ret[i] = signatureStrForType(p)
+			ret[i] = stringForType(p)
 		}
 		return strings.Join(ret, "")
 	}
 }
 
-func signatureStrForType(t reflect.Type) string {
-	// Check typeToStr first, to convert ObjectPath to its special
-	// type rather than lower it to its underlying string.
+func stringForType(t reflect.Type) string {
 	if ret := typeToStr[t]; ret != 0 {
 		return string(ret)
 	}
-	if ret := typeToStr[kindToType[t.Kind()]]; ret != 0 {
+	if ret := kindToStr[t.Kind()]; ret != 0 {
 		return string(ret)
 	}
 
 	switch t.Kind() {
 	case reflect.Slice:
-		return "a" + signatureStrForType(t.Elem())
+		return "a" + stringForType(t.Elem())
 	case reflect.Map:
-		return fmt.Sprintf("a{%s%s}", signatureStrForType(t.Key()), signatureStrForType(t.Elem()))
+		return fmt.Sprintf("a{%s%s}", stringForType(t.Key()), stringForType(t.Elem()))
 	case reflect.Struct:
 		var ret []string
 		for _, f := range reflect.VisibleFields(t) {
 			if f.Anonymous || !f.IsExported() {
 				continue
 			}
-			ret = append(ret, signatureStrForType(f.Type))
+			ret = append(ret, stringForType(f.Type))
 		}
 		return fmt.Sprintf("(%s)", strings.Join(ret, ""))
 	default:
