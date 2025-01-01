@@ -89,17 +89,21 @@ func TestEncoder(t *testing.T) {
 		{
 			"struct padding",
 			func(e *fragments.Encoder) {
-				e.Struct(func() {
+				e.Struct(func() error {
 					e.Uint64(66)
+					return nil
 				})
-				e.Struct(func() {
+				e.Struct(func() error {
 					e.Uint32(42)
+					return nil
 				})
-				e.Struct(func() {
+				e.Struct(func() error {
 					e.Uint16(66)
+					return nil
 				})
-				e.Struct(func() {
+				e.Struct(func() error {
 					e.Uint8(42)
+					return nil
 				})
 			},
 			[]byte{
@@ -115,9 +119,10 @@ func TestEncoder(t *testing.T) {
 		{
 			"array",
 			func(e *fragments.Encoder) {
-				e.Array(false, func() {
+				e.Array(false, func() error {
 					e.Uint16(1)
 					e.Uint16(2)
+					return nil
 				})
 			},
 			[]byte{
@@ -130,7 +135,7 @@ func TestEncoder(t *testing.T) {
 		{
 			"empty array",
 			func(e *fragments.Encoder) {
-				e.Array(false, func() {})
+				e.Array(false, func() error { return nil })
 			},
 			[]byte{
 				0x00, 0x00, 0x00, 0x00, // length
@@ -140,13 +145,16 @@ func TestEncoder(t *testing.T) {
 		{
 			"struct array",
 			func(e *fragments.Encoder) {
-				e.Array(true, func() {
-					e.Struct(func() {
+				e.Array(true, func() error {
+					e.Struct(func() error {
 						e.Uint16(1)
+						return nil
 					})
-					e.Struct(func() {
+					e.Struct(func() error {
 						e.Uint16(2)
+						return nil
 					})
+					return nil
 				})
 			},
 			[]byte{
@@ -161,7 +169,7 @@ func TestEncoder(t *testing.T) {
 		{
 			"empty struct array",
 			func(e *fragments.Encoder) {
-				e.Array(true, func() {})
+				e.Array(true, func() error { return nil })
 			},
 			[]byte{
 				0x00, 0x00, 0x00, 0x00, // length
@@ -172,9 +180,10 @@ func TestEncoder(t *testing.T) {
 		{
 			"array followed by other stuff",
 			func(e *fragments.Encoder) {
-				e.Array(false, func() {
+				e.Array(false, func() error {
 					e.Uint16(1)
 					e.Uint16(2)
+					return nil
 				})
 				e.Uint16(3)
 			},
@@ -189,13 +198,16 @@ func TestEncoder(t *testing.T) {
 		{
 			"struct array followed by other stuff",
 			func(e *fragments.Encoder) {
-				e.Array(true, func() {
-					e.Struct(func() {
+				e.Array(true, func() error {
+					e.Struct(func() error {
 						e.Uint16(1)
+						return nil
 					})
-					e.Struct(func() {
+					e.Struct(func() error {
 						e.Uint16(2)
+						return nil
 					})
+					return nil
 				})
 				e.Uint16(3)
 			},
