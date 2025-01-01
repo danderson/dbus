@@ -176,6 +176,73 @@ func TestMarshal(t *testing.T) {
 			0x42,
 		}},
 
+		{Embedded_P{&Simple{42, true}, 66}, le, []byte{
+			// Embedded.Simple.A
+			0x2a, 0x00,
+			// pad to bool
+			0x00, 0x00,
+			// Embedded.Simple.B
+			0x01, 0x00, 0x00, 0x00,
+			// Embedded.C
+			0x42,
+		}},
+		{Embedded_P{&Simple{42, true}, 66}, be, []byte{
+			// Embedded.Simple.A
+			0x00, 0x2a,
+			// pad to bool
+			0x00, 0x00,
+			// Embedded.Simple.B
+			0x00, 0x00, 0x00, 0x01,
+			// Embedded.C
+			0x42,
+		}},
+
+		{Embedded_P{C: 66}, le, []byte{
+			// Embedded.Simple.A
+			0x00, 0x00,
+			// pad to bool
+			0x00, 0x00,
+			// Embedded.Simple.B
+			0x00, 0x00, 0x00, 0x00,
+			// Embedded.C
+			0x42,
+		}},
+		{Embedded_P{C: 66}, be, []byte{
+			// Embedded.Simple.A
+			0x00, 0x00,
+			// pad to bool
+			0x00, 0x00,
+			// Embedded.Simple.B
+			0x00, 0x00, 0x00, 0x00,
+			// Embedded.C
+			0x42,
+		}},
+
+		{Embedded_PVP{D: 66}, le, []byte{
+			// Embedded_PVP.Embedded_PV.Embedded_P.Simple.A
+			0x00, 0x00,
+			// pad to bool
+			0x00, 0x00,
+			// Embedded_PVP.Embedded_PV.Embedded_P.Simple.B
+			0x00, 0x00, 0x00, 0x00,
+			// Embedded_PVP.Embedded_PV.Embedded_P.C
+			0x00,
+			// Embedded_PVP.D
+			0x42,
+		}},
+		{Embedded_PVP{D: 66}, be, []byte{
+			// Embedded_PVP.Embedded_PV.Embedded_P.Simple.A
+			0x00, 0x00,
+			// pad to bool
+			0x00, 0x00,
+			// Embedded_PVP.Embedded_PV.Embedded_P.Simple.B
+			0x00, 0x00, 0x00, 0x00,
+			// Embedded_PVP.Embedded_PV.Embedded_P.C
+			0x00,
+			// Embedded_PVP.D
+			0x42,
+		}},
+
 		{EmbeddedShadow{Simple{42, true}, 66}, le, []byte{
 			// Embedded.Simple.A
 			0x2a, 0x00,

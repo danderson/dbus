@@ -334,7 +334,7 @@ func newStructFieldEncoder(f *structField) fragments.EncoderFunc {
 	} else {
 		fEnc := encoders.Get(f.Type)
 		return func(e *fragments.Encoder, v reflect.Value) error {
-			fv := v.FieldByIndex(f.Index)
+			fv := f.GetWithZero(v)
 			return fEnc(e, fv)
 		}
 	}
@@ -357,7 +357,7 @@ func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
 	return func(e *fragments.Encoder, v reflect.Value) error {
 		return e.Array(true, func() error {
 			for _, f := range varDictFields {
-				fv := v.FieldByIndex(f.Index)
+				fv := f.GetWithZero(v)
 				if fv.IsZero() && !f.EncodeZero {
 					continue
 				}
@@ -376,7 +376,7 @@ func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
 				}
 			}
 
-			other := v.FieldByIndex(f.Index)
+			other := f.GetWithZero(v)
 			ks := other.MapKeys()
 			slices.SortFunc(ks, kCmp)
 			for _, mapKey := range ks {

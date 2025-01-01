@@ -13,7 +13,7 @@ import (
 // be marshaled/unmarshaled.
 type structField struct {
 	Name  string
-	Index []int
+	Index [][]int
 	Type  reflect.Type
 
 	// VarDictFields are the key-specific fields associated with this
@@ -35,6 +35,40 @@ func (f *structField) VarDictField(key reflect.Value) *varDictField {
 		return nil
 	}
 	return ret.Interface().(*varDictField)
+}
+
+// GetWithZero loads the struct field from structVal. If loading
+// requires traversing a nil pointer into an embedded struct,
+// GetWithZero returns a non-settable zero value of the field.
+func (f *structField) GetWithZero(structVal reflect.Value) reflect.Value {
+	v := structVal
+	for i, hop := range f.Index {
+		if i > 0 {
+			if v.IsNil() {
+				return reflect.Zero(f.Type)
+			}
+			v = v.Elem()
+		}
+		v = v.FieldByIndex(hop)
+	}
+	return v
+}
+
+// GetWithAlloc loads the struct field from structVal. If loading
+// encounters a nil pointer to an embedded struct, GetWithAlloc sets
+// the pointer to a zero value of the embedded struct.
+func (f *structField) GetWithAlloc(structVal reflect.Value) reflect.Value {
+	v := structVal
+	for i, hop := range f.Index {
+		if i > 0 {
+			if v.IsNil() {
+				v.Set(reflect.New(v.Type().Elem()))
+			}
+			v = v.Elem()
+		}
+		v = v.FieldByIndex(hop)
+	}
+	return v
 }
 
 func (f *structField) String() string {
@@ -114,7 +148,7 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 		fieldInfo := &structField{
 			Name:  field.Name,
 			Type:  field.Type,
-			Index: field.Index,
+			Index: allocSteps(t, field.Index),
 		}
 
 		if isVardict {
@@ -279,4 +313,28 @@ func mapKeyCmp(t reflect.Type) func(a, b reflect.Value) int {
 	default:
 		panic("invalid map key type")
 	}
+}
+
+// allocSteps partitions a multi-hop traversal of struct fields into
+// segments that end at either the final value, or a struct pointer
+// that might be nil.
+//
+// This can be used to traverse to idx while allocating missing
+// structs, by using FieldByIndex repeatedly to traverse to each
+// pointer and check for nil-ness.
+func allocSteps(t reflect.Type, idx []int) [][]int {
+	var ret [][]int
+	prev := 0
+	t = t.Field(idx[0]).Type
+	for i := 1; i < len(idx); i++ {
+		if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct {
+			// Hop through a struct pointer that might be nil, cut.
+			ret = append(ret, idx[prev:i])
+			prev = i
+			t = t.Elem()
+		}
+		t = t.Field(idx[i]).Type
+	}
+	ret = append(ret, idx[prev:])
+	return ret
 }

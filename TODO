@@ -10,13 +10,6 @@ array, for the weird start padding on zero-length arrays thing. Many
 values could implement just MarshalDBus/UnmarshalDBus and live happily
 ever after.
 
-Better handling of nil embedded structs in marshal, I think right now
-it'll just panic.
-
-Combine struct and vardict into one uber-struct-and-vardict type.
-Makes header work better, probably better ergonomics elsewhere too
-for types that are trying to be "extensible structs".
-
 finish implementing Conn for incoming calls and signals
 
 make signature parsing/printing use structinfo, so that things like

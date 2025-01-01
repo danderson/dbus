@@ -406,38 +406,6 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 }
 
-type structFieldDecoder struct {
-	idx [][]int
-	dec fragments.DecoderFunc
-}
-
-type structDecoder []structFieldDecoder
-
-func fieldByIndexAlloc(v reflect.Value, idx [][]int) reflect.Value {
-	for i, hop := range idx {
-		if i > 0 {
-			if v.IsNil() {
-				v.Set(reflect.New(v.Type().Elem()))
-			}
-			v = v.Elem()
-		}
-		v = v.FieldByIndex(hop)
-	}
-	return v
-}
-
-func (fs structDecoder) decode(st *fragments.Decoder, v reflect.Value) error {
-	return st.Struct(func() error {
-		for _, f := range fs {
-			fv := fieldByIndexAlloc(v, f.idx)
-			if err := f.dec(st, fv); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 	fs, err := getStructInfo(t)
 	if err != nil {
@@ -471,9 +439,8 @@ func newStructFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFunc
 		return newVarDictFieldDecoder(t, f)
 	} else {
 		fDec := decoders.Get(f.Type)
-		index := allocSteps(t, f.Index)
 		return func(d *fragments.Decoder, v reflect.Value) error {
-			fv := fieldByIndexAlloc(v, index)
+			fv := f.GetWithAlloc(v)
 			return fDec(d, fv)
 		}
 	}
@@ -485,17 +452,14 @@ func newVarDictFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFun
 	kDec := decoders.Get(f.Type.Key())
 	vDec := decoders.Get(variantType)
 
-	mapIndex := allocSteps(t, f.Index)
 	fields := map[string]*varDictField{}
-	allocs := map[string][][]int{}
 	for _, key := range f.VarDictFields.MapKeys() {
 		vf := f.VarDictField(key)
 		fields[vf.StrKey] = vf
-		allocs[vf.StrKey] = allocSteps(t, vf.Index)
 	}
 
 	return func(d *fragments.Decoder, v reflect.Value) error {
-		unknown := fieldByIndexAlloc(v, mapIndex)
+		unknown := f.GetWithAlloc(v)
 		unknownInit := false
 
 		key := reflect.New(f.Type.Key())
@@ -520,7 +484,7 @@ func newVarDictFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFun
 
 			keyStr := fmt.Sprint(key.Elem())
 			if field := fields[keyStr]; field != nil {
-				fv := fieldByIndexAlloc(v, allocs[keyStr])
+				fv := field.GetWithAlloc(v)
 				inner := val.Elem().Interface().(Variant).Value
 				innerVal := reflect.ValueOf(inner)
 				if fv.Type() != innerVal.Type() {
@@ -543,30 +507,6 @@ func newVarDictFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFun
 		})
 		return err
 	}
-}
-
-// allocSteps partitions a multi-hop traversal of struct fields into
-// segments that end at either the final value, or a struct pointer
-// that might be nil.
-//
-// This can be used to traverse to idx while allocating missing
-// structs, by using FieldByIndex repeatedly to traverse to each
-// pointer and check for nil-ness.
-func allocSteps(t reflect.Type, idx []int) [][]int {
-	var ret [][]int
-	prev := 0
-	t = t.Field(idx[0]).Type
-	for i := 1; i < len(idx); i++ {
-		if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct {
-			// Hop through a struct pointer that might be nil, cut.
-			ret = append(ret, idx[prev:i])
-			prev = i
-			t = t.Elem()
-		}
-		t = t.Field(idx[i]).Type
-	}
-	ret = append(ret, idx[prev:])
-	return ret
 }
 
 func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
