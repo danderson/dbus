@@ -12,7 +12,7 @@ import (
 
 // Unmarshal parses the DBus wire message data and stores the result
 // in the value pointed to by v. If v is nil or not a pointer,
-// Unmarshal returns [ErrUnrepresentable].
+// Unmarshal returns a [TypeError].
 //
 // Generally, Unmarshal applies the inverse of the rules used by
 // [Marshal]. The layout of the wire message must be compatible with
@@ -25,7 +25,7 @@ import (
 // [Unmarshaler.UnmarshalDBus] to unmarshal it. Types implementing
 // [Unmarshaler] must use a pointer receiver on
 // [Unmarshaler.UnmarshalDBus]. Attempting to unmarshal using a value
-// receiver UnmarshalDBus method results in [ErrUnrepresentable].
+// receiver UnmarshalDBus method results in a [TypeError].
 //
 // Otherwise, Unmarshal uses the following type-dependent default
 // encodings:
@@ -63,11 +63,11 @@ import (
 //
 // [int], [uint], interface, channel, complex and function values have
 // no equivalent DBus type. If Unmarshal encounters such a value it
-// will return [ErrUnrepresentable].
+// will return a [TypeError].
 //
 // DBus cannot represent cyclic or recursive types. Attempting to
-// decode into such values causes Unmarshal to return an
-// [ErrUnrepresentable].
+// decode into such values causes Unmarshal to return a
+// [TypeError].
 func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 	if v == nil {
 		return fmt.Errorf("can't unmarshal into nil interface")
@@ -108,7 +108,7 @@ func debugDecoder(msg string, args ...any) {
 //
 // [Unmarshaler.UnmarshalDBus] must have a pointer receiver. If
 // Unmarshal encounters an Unmarshaler whose UnmarshalDBus method
-// takes a value receiver, it will return [ErrUnrepresentable].
+// takes a value receiver, it will return a [TypeError].
 //
 // [Unmarshaler.UnmarshalDBus] may assume that the output has already
 // been padded according to the value returned by
@@ -211,7 +211,7 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 // decoder normally, so callers may use this function like any other
 // DecoderFunc constructor.
 func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
-	err := unrepresentable(t, reason)
+	err := typeErr(t, reason)
 	decoders.Unwind(func(*fragments.Decoder, reflect.Value) error {
 		return err
 	})

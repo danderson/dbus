@@ -43,16 +43,16 @@ import (
 // the corresponding DBus types.
 //
 // [Variant] values encode as DBus variants. The Variant's inner value
-// must be a value acceptable to Marshal, or it will return an
-// [ErrUnrepresentable].
+// must be a value acceptable to Marshal, or it will return a
+// [TypeError].
 //
 // [int], [uint], interface, channel, complex, and function values
 // cannot be encoded. Attempting to encode such values causes Marshal
-// to return an [ErrUnrepresentable].
+// to return a [TypeError].
 //
 // DBus cannot represent cyclic or recursive types, and Marshal does
 // not handle them. Attempting to encode such values causes Marshal to
-// return an [ErrUnrepresentable].
+// return a [TypeError].
 func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
 	enc := encoders.GetRecover(val.Type())
@@ -159,7 +159,7 @@ func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 // encoder normally, so callers may use this function like any other
 // EncoderFunc constructor.
 func newErrEncoder(t reflect.Type, reason string) fragments.EncoderFunc {
-	err := unrepresentable(t, reason)
+	err := typeErr(t, reason)
 	encoders.Unwind(func(*fragments.Encoder, reflect.Value) error {
 		return err
 	})
@@ -186,7 +186,7 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 		debugEncoder("%s{} (external marshaler, addressable only)", t)
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			if !v.CanAddr() {
-				return unrepresentable(t, "Marshaler only implemented on pointer receiver, and cannot take address of value")
+				return typeErr(t, "Marshaler is only implemented on pointer receiver, and cannot take the address of given value")
 			}
 			return ptr(st, v.Addr())
 		}

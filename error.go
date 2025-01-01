@@ -5,21 +5,21 @@ import (
 	"reflect"
 )
 
-type ErrUnrepresentable struct {
+type TypeError struct {
 	Type   string
 	Reason string
 }
 
-func (e ErrUnrepresentable) Error() string {
+func (e TypeError) Error() string {
 	return fmt.Sprintf("dbus cannot represent %s: %s", e.Type, e.Reason)
 }
 
-func unrepresentable(t reflect.Type, reason string) error {
+func typeErr(t reflect.Type, reason string) error {
 	ts := ""
 	if t != nil {
 		ts = t.String()
 	}
-	return ErrUnrepresentable{ts, reason}
+	return TypeError{ts, reason}
 }
 
 type CallError struct {

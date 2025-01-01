@@ -326,7 +326,7 @@ func MustSignatureOf(v any) Signature {
 }
 
 func sigErr(t reflect.Type, reason string) Signature {
-	signatures.Unwind(sigCacheEntry{err: unrepresentable(t, reason)})
+	signatures.Unwind(sigCacheEntry{err: typeErr(t, reason)})
 	// So that callers can return the result of this constructor and
 	// pretend that it's not doing any non-local return. The non-local
 	// return is just an optimization so that encoders don't waste
