@@ -37,6 +37,8 @@ func TestSignatureOf(t *testing.T) {
 		{EmbeddedShadow{}, "(ny)"},
 		{Arrays{}, "(asa(nb)aa(y(nb)))"},
 		{dbus.Variant{int16(0)}, "v"},
+		{VarDict{}, "(a{sv})"},
+		{VarDictByte{}, "(a{yv})"},
 
 		{},
 		{struct{}{}, ""},

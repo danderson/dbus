@@ -147,10 +147,11 @@ func stringForType(t reflect.Type) string {
 		return fmt.Sprintf("a{%s%s}", stringForType(t.Key()), stringForType(t.Elem()))
 	case reflect.Struct:
 		var ret []string
-		for _, f := range reflect.VisibleFields(t) {
-			if f.Anonymous || !f.IsExported() {
-				continue
-			}
+		fs, err := getStructInfo(t)
+		if err != nil {
+			panic(fmt.Sprintf("printing Signature for %s: %v", t, err))
+		}
+		for _, f := range fs.StructFields {
 			ret = append(ret, stringForType(f.Type))
 		}
 		return fmt.Sprintf("(%s)", strings.Join(ret, ""))
@@ -375,18 +376,17 @@ func uncachedSignatureOf(t reflect.Type) Signature {
 
 		return mkSignature(reflect.MapOf(ks.onlyType(), vs.onlyType()))
 	case reflect.Struct:
-		hasFields := false
-		for _, f := range reflect.VisibleFields(t) {
-			if f.Anonymous || !f.IsExported() {
-				continue
-			}
-			hasFields = true
-			// Descend through all the fields, to look for cyclic
+		fs, err := getStructInfo(t)
+		if err != nil {
+			return sigErr(t, fmt.Sprintf("getting struct info: %v", err.Error()))
+		}
+		if len(fs.StructFields) == 0 {
+			return sigErr(t, "empty struct")
+		}
+		for _, f := range fs.StructFields {
+			// Descend through all fields, to look for cyclic
 			// references.
 			signatureOf(f.Type)
-		}
-		if !hasFields {
-			return sigErr(t, "empty struct")
 		}
 		return mkSignature(t)
 	}

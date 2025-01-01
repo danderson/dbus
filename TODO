@@ -12,9 +12,9 @@ ever after.
 
 finish implementing Conn for incoming calls and signals
 
-make signature parsing/printing use structinfo, so that things like
-"encode this map as an array" can be reflected.
-
 skip struct padding for structs that are entirely vardict
 encoded. Currently can't write a struct that is a pure vardict and use
 it where dbus wants a dict, it'll get padded wrong.
+
+support encoding maps as either a{xy} or a(xy). Various dbus protocols
+use the latter for some reason.
