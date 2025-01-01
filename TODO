@@ -21,3 +21,6 @@ Makes header work better, probably better ergonomics elsewhere too
 for types that are trying to be "extensible structs".
 
 finish implementing Conn for incoming calls and signals
+
+make signature parsing/printing use structinfo, so that things like
+"encode this map as an array" can be reflected.
