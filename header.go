@@ -2,14 +2,18 @@ package dbus
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/danderson/dbus/fragments"
 )
 
 type byteOrder bool
 
-func (*byteOrder) AlignDBus() int           { return 1 }
-func (*byteOrder) SignatureDBus() Signature { return "" }
+func (*byteOrder) AlignDBus() int { return 1 }
+
+var byteOrderSignature = mkSignature(reflect.TypeFor[uint8]())
+
+func (*byteOrder) SignatureDBus() Signature { return byteOrderSignature }
 
 func (*byteOrder) MarshalDBus(e *fragments.Encoder) error {
 	e.ByteOrderFlag()
@@ -41,7 +45,7 @@ const (
 type structAlign struct{}
 
 func (*structAlign) AlignDBus() int           { return 8 }
-func (*structAlign) SignatureDBus() Signature { return "" }
+func (*structAlign) SignatureDBus() Signature { return Signature{} }
 
 func (*structAlign) MarshalDBus(*fragments.Encoder) error   { return nil }
 func (*structAlign) UnmarshalDBus(*fragments.Decoder) error { return nil }

@@ -21,7 +21,7 @@ func TestSignatureOf(t *testing.T) {
 		{uint64(0), "t"},
 		{float64(0), "d"},
 		{string(""), "s"},
-		{dbus.Signature(""), "g"},
+		{dbus.Signature{}, "g"},
 		{dbus.ObjectPath(""), "o"},
 		{(*dbus.FileDescriptor)(nil), "h"},
 		{[]string{}, "as"},
@@ -47,7 +47,7 @@ func TestSignatureOf(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got, err := dbus.SignatureOf(tc.in)
+		gotSig, err := dbus.SignatureOf(tc.in)
 		gotErr := err != nil
 		wantErr := tc.want == ""
 		if gotErr != wantErr {
@@ -57,10 +57,10 @@ func TestSignatureOf(t *testing.T) {
 			}
 			t.Errorf("SignatureOf(%T) got err %v, want %s", tc.in, err, wanted)
 		}
-		if string(got) != tc.want {
-			t.Errorf("SignatureOf(%T) = %q, want %q", tc.in, got, tc.want)
+		if got := gotSig.String(); got != tc.want {
+			t.Errorf("SignatureOf(%T).String() = %q, want %q", tc.in, got, tc.want)
 		} else if testing.Verbose() {
-			t.Logf("SignatureOf(%T) = %q, err=%v", tc.in, got, err)
+			t.Logf("SignatureOf(%T).String() = %q, err=%v", tc.in, got, err)
 		}
 	}
 }

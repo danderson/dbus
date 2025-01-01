@@ -55,14 +55,14 @@ func TestMarshalVariant(t *testing.T) {
 		},
 
 		{
-			dbus.Signature("uu"),
+			dbus.MustParseSignature("uu"),
 			[]byte{
 				// Signature string "g"
 				0x01, 0x67, 0x00,
 				// val
 				0x02, 0x75, 0x75, 0x00,
 			},
-			dbus.Variant{dbus.Signature("uu")},
+			dbus.Variant{dbus.MustParseSignature("uu")},
 		},
 
 		{
@@ -120,7 +120,9 @@ func TestMarshalVariant(t *testing.T) {
 		if err != nil {
 			t.Errorf("Unmarshal(Marshal(dbus.Variant{%T})) got err: %v", tc.in, err)
 		}
-		if diff := cmp.Diff(gotU, tc.wantUnmarshal); diff != "" {
+		if diff := cmp.Diff(gotU, tc.wantUnmarshal, cmp.Comparer(func(a, b dbus.Signature) bool {
+			return a.String() == b.String()
+		})); diff != "" {
 			t.Error(diff)
 		} else {
 			t.Logf("Unmarshal(...) = %#v", gotU)

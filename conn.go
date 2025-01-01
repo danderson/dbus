@@ -168,18 +168,26 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 		return nil
 	}
 
-	var errStr string
-	var err error
-	if hdr.Extra.Signature != "" && hdr.Extra.Signature[0] == 's' {
+	errStr := func() string {
+		if hdr.Extra.Signature.IsZero() {
+			return ""
+		}
+		for p := range hdr.Extra.Signature.Parts() {
+			if p.Type() != reflect.TypeFor[string]() {
+				return ""
+			}
+			break
+		}
 		dec := fragments.Decoder{
 			Order: hdr.Order.Order(),
 			In:    body,
 		}
-		errStr, err = dec.String()
+		errStr, err := dec.String()
 		if err != nil {
-			errStr = fmt.Sprintf("got error while decoding error detail: %v", err)
+			return fmt.Sprintf("got error while decoding error detail: %v", err)
 		}
-	}
+		return errStr
+	}()
 
 	pending.err = CallError{
 		Name:   hdr.Extra.ErrName,

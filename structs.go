@@ -23,7 +23,7 @@ type structField struct {
 func (s *structField) IsVarDict() bool { return s.VarDictKey != "" }
 func (s *structField) IsVarDictMap() bool {
 	return (s.Type.Kind() == reflect.Map &&
-		isValidMapKeyType(s.Type.Key()) &&
+		mapKeyKinds.Has(s.Type.Key().Kind()) &&
 		s.Type.Elem() == variantType)
 }
 
@@ -121,17 +121,8 @@ func getStructField(f reflect.StructField) *structField {
 	return ret
 }
 
-func isValidMapKeyType(t reflect.Type) bool {
-	switch t.Kind() {
-	case reflect.Bool, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.String:
-		return true
-	default:
-		return false
-	}
-}
-
 func isValidVarDictMapType(t reflect.Type) bool {
-	return t.Kind() == reflect.Map && isValidMapKeyType(t.Key()) && t.Elem() == variantType
+	return t.Kind() == reflect.Map && mapKeyKinds.Has(t.Key().Kind()) && t.Elem() == variantType
 }
 
 func typeParser(t reflect.Type) func(string) (reflect.Value, error) {
@@ -144,7 +135,7 @@ func typeParser(t reflect.Type) func(string) (reflect.Value, error) {
 			}
 			return reflect.ValueOf(b), nil
 		}
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Int16, reflect.Int32, reflect.Int64:
 		return func(s string) (reflect.Value, error) {
 			i64, err := strconv.ParseInt(s, 10, int(t.Size())*8)
 			if err != nil {
@@ -189,7 +180,7 @@ func newMapKeyCompare(t reflect.Type) func(a, b reflect.Value) int {
 			}
 			return 1
 		}
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Int16, reflect.Int32, reflect.Int64:
 		return func(a, b reflect.Value) int {
 			return cmp.Compare(a.Int(), b.Int())
 		}

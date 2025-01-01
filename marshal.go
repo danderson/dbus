@@ -138,11 +138,11 @@ func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 		return newBoolEncoder()
 	case reflect.Int, reflect.Uint:
 		return newErrEncoder(t, "int and uint aren't portable, use fixed width integers")
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Int16, reflect.Int32, reflect.Int64:
 		return newIntEncoder(t)
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return newUintEncoder(t)
-	case reflect.Float32, reflect.Float64:
+	case reflect.Float64:
 		return newFloatEncoder()
 	case reflect.String:
 		return newStringEncoder()
@@ -237,12 +237,6 @@ func newBoolEncoder() fragments.EncoderFunc {
 
 func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
-	case 1:
-		debugEncoder("int8{}")
-		return func(st *fragments.Encoder, v reflect.Value) error {
-			st.Uint8(byte(v.Int()))
-			return nil
-		}
 	case 2:
 		debugEncoder("int16{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
@@ -402,7 +396,7 @@ func newVarDictEncoder(fs *structInfo) fragments.EncoderFunc {
 	})
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
-		st.Array(true, func() error {
+		return st.Array(true, func() error {
 			for _, f := range fs.VarDictFields {
 				fv := v.FieldByIndex(f.Index)
 				if fv.IsZero() && !f.EncodeZeroValue {
@@ -444,15 +438,13 @@ func newVarDictEncoder(fs *structInfo) fragments.EncoderFunc {
 
 			return nil
 		})
-
-		return nil
 	}
 }
 
 func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	debugEncoder("map[%s]%s{}", t.Key(), t.Elem())
 	kt := t.Key()
-	if !isValidMapKeyType(kt) {
+	if !mapKeyKinds.Has(kt.Kind()) {
 		return newErrEncoder(t, fmt.Sprintf("invalid map key type %s", kt))
 	}
 	kEnc := encoders.Get(kt)

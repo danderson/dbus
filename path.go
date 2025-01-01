@@ -1,6 +1,10 @@
 package dbus
 
-import "github.com/danderson/dbus/fragments"
+import (
+	"reflect"
+
+	"github.com/danderson/dbus/fragments"
+)
 
 type ObjectPath string
 
@@ -18,5 +22,8 @@ func (o *ObjectPath) UnmarshalDBus(st *fragments.Decoder) error {
 	return nil
 }
 
-func (ObjectPath) AlignDBus() int           { return 4 }
-func (ObjectPath) SignatureDBus() Signature { return "o" }
+func (ObjectPath) AlignDBus() int { return 4 }
+
+var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath]())
+
+func (ObjectPath) SignatureDBus() Signature { return objectPathSignature }

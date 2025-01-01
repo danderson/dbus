@@ -44,5 +44,8 @@ func (v *Variant) UnmarshalDBus(d *fragments.Decoder) error {
 	return nil
 }
 
-func (v Variant) AlignDBus() int           { return 1 }
-func (v Variant) SignatureDBus() Signature { return "v" }
+func (v Variant) AlignDBus() int { return 1 }
+
+var variantSignature = mkSignature(variantType)
+
+func (v Variant) SignatureDBus() Signature { return variantSignature }

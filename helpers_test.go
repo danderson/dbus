@@ -121,7 +121,9 @@ func (s SelfMarshalerVal) UnmarshalDBus(st *fragments.Decoder) error {
 
 func (s SelfMarshalerVal) AlignDBus() int { return 3 }
 
-func (s SelfMarshalerVal) SignatureDBus() dbus.Signature { return "q" }
+func (s SelfMarshalerVal) SignatureDBus() dbus.Signature {
+	return dbus.MustSignatureFor[uint16]()
+}
 
 // SelfMarshalerPtr is a struct that implements dbus.Marshaler and
 // dbus.Unmarshaler with pointer method receivers.
@@ -150,7 +152,9 @@ func (s *SelfMarshalerPtr) UnmarshalDBus(st *fragments.Decoder) error {
 
 func (s *SelfMarshalerPtr) AlignDBus() int { return 3 }
 
-func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature { return "q" }
+func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature {
+	return dbus.MustSignatureFor[uint16]()
+}
 
 // VarDict is a struct that marshals to a DBus dict of string to
 // variant.
@@ -158,7 +162,7 @@ type VarDict struct {
 	A     uint16 `dbus:"key=foo"`
 	B     uint32 `dbus:"key=bar,encodeZero"`
 	C     string `dbus:"key=@"`
-	D     int8   `dbus:"key=@"`
+	D     uint8  `dbus:"key=@"`
 	Other map[string]dbus.Variant
 }
 
