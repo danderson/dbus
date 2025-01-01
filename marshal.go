@@ -54,21 +54,11 @@ import (
 // not handle them. Attempting to encode such values causes Marshal to
 // return an [ErrUnrepresentable].
 func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
-	return MarshalAppend(nil, v, ord)
-}
-
-// MarshalAppend is like [Marshal] but appends its output to bs and
-// returns the extended slice.
-//
-// Additional padding bytes may be appended prior to the start of the
-// marshaled value, to respect DBus alignment rules.
-func MarshalAppend(bs []byte, v any, ord fragments.ByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
 	enc := encoders.GetRecover(val.Type())
 	st := fragments.Encoder{
 		Order:  ord,
 		Mapper: encoders.GetRecover,
-		Out:    bs,
 	}
 	if err := enc(&st, val); err != nil {
 		return nil, err
