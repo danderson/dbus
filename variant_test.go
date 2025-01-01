@@ -66,17 +66,21 @@ func TestMarshalVariant(t *testing.T) {
 		},
 
 		{
-			struct{ A, B uint16 }{1, 2},
+			Simple{A: 2, B: true},
 			[]byte{
 				// Signature string "(qq)"
-				0x04, 0x28, 0x71, 0x71, 0x29, 0x00,
+				0x04, 0x28, 0x6e, 0x62, 0x29, 0x00,
 				// pad to struct
 				0x00, 0x00,
 				// val
-				0x00, 0x01,
-				0x00, 0x02,
+				0x00, 0x02, // A
+				0x00, 0x00, // pad
+				0x00, 0x00, 0x00, 0x01, // B
 			},
-			nil, // TODO: support structs
+			dbus.Variant{struct {
+				Field0 int16
+				Field1 bool
+			}{2, true}},
 		},
 
 		{

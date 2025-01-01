@@ -48,9 +48,13 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 
 	switch sig[0] {
 	case 'a':
+		isDict := len(sig) > 1 && sig[1] == '{'
 		elem, rest, err := parseOne(sig[1:], true)
 		if err != nil {
 			return nil, "", err
+		}
+		if isDict {
+			return elem, rest, nil // sub-parser already produced a map
 		}
 		return reflect.SliceOf(elem), rest, nil
 	case '(':
@@ -60,14 +64,14 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 			rest   = sig[1:]
 			err    error
 		)
-		for sig != "" && sig[0] != ')' {
+		for rest != "" && rest[0] != ')' {
 			field, rest, err = parseOne(rest, false)
 			if err != nil {
 				return nil, "", err
 			}
 			fields = append(fields, field)
 		}
-		if sig == "" {
+		if rest == "" {
 			return nil, "", fmt.Errorf("missing closing ) in struct definition")
 		}
 		fs := make([]reflect.StructField, len(fields))
@@ -77,7 +81,7 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 				Type: f,
 			}
 		}
-		return reflect.StructOf(fs), sig[1:], nil
+		return reflect.StructOf(fs), rest[1:], nil
 	case '{':
 		if !inArray {
 			return nil, "", errors.New("dict entry type found outside array")
@@ -93,7 +97,10 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		return reflect.MapOf(key, val), rest, nil
+		if rest == "" || rest[0] != '}' {
+			return nil, "", errors.New("missing closing } in dict entry definition")
+		}
+		return reflect.MapOf(key, val), rest[1:], nil
 	default:
 		return nil, "", fmt.Errorf("unknown type specifier %q", sig[0])
 	}
@@ -125,6 +132,9 @@ func (s Signature) String() string {
 }
 
 func signatureStrForType(t reflect.Type) string {
+	if t == reflect.TypeFor[FileDescriptor]() {
+		return "h"
+	}
 	// Check typeToStr first, to convert ObjectPath to its special
 	// type rather than lower it to its underlying string.
 	if ret := typeToStr[t]; ret != 0 {
@@ -296,7 +306,7 @@ func SignatureFor[T any]() (Signature, error) {
 func MustSignatureFor[T any]() Signature {
 	ret, err := SignatureFor[T]()
 	if err != nil {
-		panic(fmt.Sprintf("MustSignatureFor(%s) failed: %v", reflect.TypeFor[T](), err))
+		panic(fmt.Sprintf("MustSignatureFor[%s]() failed: %v", reflect.TypeFor[T](), err))
 	}
 	return ret
 }
@@ -308,6 +318,14 @@ func SignatureOf(v any) (Signature, error) {
 		return Signature{}, ret.err
 	}
 	return ret.sig, nil
+}
+
+func MustSignatureOf(v any) Signature {
+	ret, err := SignatureOf(v)
+	if err != nil {
+		panic(fmt.Sprintf("MustSignatureOf(%s) failed: %v", v, err))
+	}
+	return ret
 }
 
 func sigErr(t reflect.Type, reason string) Signature {
