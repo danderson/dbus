@@ -132,9 +132,6 @@ func (s Signature) String() string {
 }
 
 func signatureStrForType(t reflect.Type) string {
-	if t == reflect.TypeFor[FileDescriptor]() {
-		return "h"
-	}
 	// Check typeToStr first, to convert ObjectPath to its special
 	// type rather than lower it to its underlying string.
 	if ret := typeToStr[t]; ret != 0 {

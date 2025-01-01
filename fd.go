@@ -15,6 +15,6 @@ func (fd *FileDescriptor) MarshalDBus(bs []byte, ord binary.AppendByteOrder) ([]
 
 func (*FileDescriptor) AlignDBus() int { return 4 }
 
-var fdSignature = mkSignature(reflect.TypeFor[FileDescriptor]())
+var fdSignature = mkSignature(reflect.TypeFor[*FileDescriptor]())
 
 func (*FileDescriptor) SignatureDBus() Signature { return fdSignature }
