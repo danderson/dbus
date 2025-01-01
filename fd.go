@@ -13,8 +13,8 @@ func (fd *FileDescriptor) MarshalDBus(bs []byte, ord binary.AppendByteOrder) ([]
 	return nil, errors.New("not yet implemented")
 }
 
-func (*FileDescriptor) AlignDBus() int { return 4 }
+func (fd *FileDescriptor) AlignDBus() int { return 4 }
 
 var fdSignature = mkSignature(reflect.TypeFor[*FileDescriptor]())
 
-func (*FileDescriptor) SignatureDBus() Signature { return fdSignature }
+func (fd *FileDescriptor) SignatureDBus() Signature { return fdSignature }

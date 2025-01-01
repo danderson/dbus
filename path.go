@@ -8,22 +8,22 @@ import (
 
 type ObjectPath string
 
-func (o ObjectPath) MarshalDBus(st *fragments.Encoder) error {
-	st.Value(string(o))
+func (p ObjectPath) MarshalDBus(st *fragments.Encoder) error {
+	st.Value(string(p))
 	return nil
 }
 
-func (o *ObjectPath) UnmarshalDBus(st *fragments.Decoder) error {
+func (p *ObjectPath) UnmarshalDBus(st *fragments.Decoder) error {
 	var s string
 	if err := st.Value(&s); err != nil {
 		return err
 	}
-	*o = ObjectPath(s)
+	*p = ObjectPath(s)
 	return nil
 }
 
-func (ObjectPath) AlignDBus() int { return 4 }
+func (p ObjectPath) AlignDBus() int { return 4 }
 
 var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath]())
 
-func (ObjectPath) SignatureDBus() Signature { return objectPathSignature }
+func (p ObjectPath) SignatureDBus() Signature { return objectPathSignature }
