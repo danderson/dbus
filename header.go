@@ -50,10 +50,22 @@ func (*structAlign) SignatureDBus() Signature { return Signature{} }
 func (*structAlign) MarshalDBus(*fragments.Encoder) error   { return nil }
 func (*structAlign) UnmarshalDBus(*fragments.Decoder) error { return nil }
 
-// headerExtra is the additional headers that come after the
-// fixed-length portion of the header. The set of required and
-// optional fields depends on the message type.
-type headerExtra struct {
+// header is a DBus message header, minus the initial byte order
+// indicator byte.
+type header struct {
+	Order byteOrder
+	// Type is the message's type.
+	Type msgType
+	// Flags is the message's flag byte.
+	Flags byte
+	// Version is the DBus protocol version
+	Version uint8
+	// Length is the length of the message body, not including the
+	// header or padding between header and body.
+	Length uint32
+	// Serial is the serial for this message. It must be non-zero.
+	Serial uint32
+
 	// Path is the target object for a call, or the source object
 	// for a signal. Required for msgTypeCall and msgTypeSignal.
 	Path ObjectPath `dbus:"key=1"`
@@ -83,28 +95,11 @@ type headerExtra struct {
 	// message. Required if file descriptors are attached to the
 	// message.
 	NumFDs uint32 `dbus:"key=9"`
-	// Unknown collects remaining unknown extension headers
-	// present in the message.
-	Unknown map[uint8]Variant
-}
 
-// header is a DBus message header, minus the initial byte order
-// indicator byte.
-type header struct {
-	Order byteOrder
-	// Type is the message's type.
-	Type msgType
-	// Flags is the message's flag byte.
-	Flags byte
-	// Version is the DBus protocol version
-	Version uint8
-	// Length is the length of the message body, not including the
-	// header or padding between header and body.
-	Length uint32
-	// Serial is the serial for this message. It must be non-zero.
-	Serial uint32
+	// Unknown collects unknown headers present in the
+	// message.
+	Unknown map[uint8]Variant `dbus:"vardict"`
 
-	Extra headerExtra
 	Align structAlign
 }
 
@@ -117,37 +112,37 @@ func (h *header) Valid() error {
 	case 0:
 		return fmt.Errorf("invalid message with Type 0")
 	case msgTypeCall:
-		if h.Extra.Path == "" {
+		if h.Path == "" {
 			return fmt.Errorf("missing required header field Path")
 		}
-		if h.Extra.Interface == "" {
+		if h.Interface == "" {
 			return fmt.Errorf("missing required header field Interface")
 		}
-		if h.Extra.Member == "" {
+		if h.Member == "" {
 			return fmt.Errorf("missing required header field Member")
 		}
-		if h.Extra.Destination == "" {
+		if h.Destination == "" {
 			return fmt.Errorf("missing required header field Destination")
 		}
 	case msgTypeReturn:
-		if h.Extra.ReplySerial == 0 {
+		if h.ReplySerial == 0 {
 			return fmt.Errorf("missing required header field ReplySerial")
 		}
 	case msgTypeError:
-		if h.Extra.ReplySerial == 0 {
+		if h.ReplySerial == 0 {
 			return fmt.Errorf("missing required header field ReplySerial")
 		}
-		if h.Extra.ErrName == "" {
+		if h.ErrName == "" {
 			return fmt.Errorf("missing required header field ErrName")
 		}
 	case msgTypeSignal:
-		if h.Extra.Path == "" {
+		if h.Path == "" {
 			return fmt.Errorf("missing required header field Path")
 		}
-		if h.Extra.Interface == "" {
+		if h.Interface == "" {
 			return fmt.Errorf("missing required header field Interface")
 		}
-		if h.Extra.Member == "" {
+		if h.Member == "" {
 			return fmt.Errorf("missing required header field Member")
 		}
 	default:

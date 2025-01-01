@@ -108,7 +108,7 @@ func (c *Conn) dispatchMsg() error {
 	defer func() {
 		io.Copy(io.Discard, bodyReader)
 	}()
-	fs, err := c.t.GetFiles(int(hdr.Extra.NumFDs))
+	fs, err := c.t.GetFiles(int(hdr.NumFDs))
 	if err != nil {
 		return err
 	}
@@ -135,8 +135,8 @@ func (c *Conn) dispatchReturn(hdr *header, body io.Reader, _ []*os.File) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		ret := c.calls[hdr.Extra.ReplySerial]
-		delete(c.calls, hdr.Extra.ReplySerial)
+		ret := c.calls[hdr.ReplySerial]
+		delete(c.calls, hdr.ReplySerial)
 		return ret
 	}()
 
@@ -158,8 +158,8 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		ret := c.calls[hdr.Extra.ReplySerial]
-		delete(c.calls, hdr.Extra.ReplySerial)
+		ret := c.calls[hdr.ReplySerial]
+		delete(c.calls, hdr.ReplySerial)
 		return ret
 	}()
 
@@ -169,10 +169,10 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	}
 
 	errStr := func() string {
-		if hdr.Extra.Signature.IsZero() {
+		if hdr.Signature.IsZero() {
 			return ""
 		}
-		for p := range hdr.Extra.Signature.Parts() {
+		for p := range hdr.Signature.Parts() {
 			if p.Type() != reflect.TypeFor[string]() {
 				return ""
 			}
@@ -190,7 +190,7 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	}()
 
 	pending.err = CallError{
-		Name:   hdr.Extra.ErrName,
+		Name:   hdr.ErrName,
 		Detail: errStr,
 	}
 	close(pending.notify)
@@ -244,20 +244,18 @@ func (c *Conn) Call(ctx context.Context, request Request, response any) error {
 	}
 
 	hdr := header{
-		Type:    msgTypeCall,
-		Flags:   0,
-		Version: 1,
-		Length:  uint32(len(body)),
-		Serial:  serial,
-		Extra: headerExtra{
-			Path:        request.Path,
-			Interface:   request.Interface,
-			Member:      request.Method,
-			Destination: request.Destination,
-		},
+		Type:        msgTypeCall,
+		Flags:       0,
+		Version:     1,
+		Length:      uint32(len(body)),
+		Serial:      serial,
+		Path:        request.Path,
+		Interface:   request.Interface,
+		Member:      request.Method,
+		Destination: request.Destination,
 	}
 	if request.Body != nil {
-		hdr.Extra.Signature = sig
+		hdr.Signature = sig
 	}
 	if request.OneWay {
 		hdr.Flags |= 0x1

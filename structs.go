@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -15,31 +16,83 @@ type structField struct {
 	Index []int
 	Type  reflect.Type
 
-	UseVariantEncoding bool
-	VarDictKey         string
-	EncodeZeroValue    bool
+	// VarDictFields are the key-specific fields associated with this
+	// structField, which must be a vardict map (map[K]dbus.Variant)
+	VarDictFields reflect.Value // map[keyType]*varDictField
 }
 
-func (s *structField) IsVarDict() bool { return s.VarDictKey != "" }
-func (s *structField) IsVarDictMap() bool {
-	return (s.Type.Kind() == reflect.Map &&
-		mapKeyKinds.Has(s.Type.Key().Kind()) &&
-		s.Type.Elem() == variantType)
+func (f *structField) IsVarDict() bool {
+	return f.VarDictFields.IsValid()
+}
+
+func (f *structField) VarDictKeyCmp() func(a, b reflect.Value) int {
+	return mapKeyCmp(f.Type.Key())
+}
+
+func (f *structField) VarDictField(key reflect.Value) *varDictField {
+	ret := f.VarDictFields.MapIndex(key)
+	if ret.IsZero() {
+		return nil
+	}
+	return ret.Interface().(*varDictField)
+}
+
+func (f *structField) String() string {
+	var ret strings.Builder
+	kindStr := ""
+	if ks := f.Type.Kind().String(); ks != f.Type.String() {
+		kindStr = fmt.Sprintf(" (%s)", ks)
+	}
+	fmt.Fprintf(&ret, "%s: %s%s at %v", f.Name, f.Type, kindStr, f.Index)
+	if f.VarDictFields.IsValid() {
+		ret.WriteString(", vardict fields:")
+		ks := f.VarDictFields.MapKeys()
+		slices.SortFunc(ks, mapKeyCmp(f.VarDictFields.Type().Key()))
+		for _, k := range ks {
+			v := f.VarDictField(k)
+			encodeZero := ""
+			if v.EncodeZero {
+				encodeZero = "(encode zero) "
+			}
+			fmt.Fprintf(&ret, "\n  %v: %s%s", v.StrKey, v, encodeZero)
+		}
+	}
+	return ret.String()
 }
 
 type varDictField struct {
 	*structField
-	key reflect.Value
+	Key    reflect.Value
+	StrKey string
+	// EncodeZero is whether to encode zero values into the
+	// vardict. By default, zero values are presumed to be unset
+	// optional values and skipped.
+	EncodeZero bool
 }
 
 type structInfo struct {
+	// Name is the struct's name, for use in diagnostics.
 	Name string
+	// Type is the struct's type, for use in diagnostics.
 	Type reflect.Type
 
+	// StructFields is the information about each struct field
+	// eligible for DBus encoding/decoding.
 	StructFields []*structField
+}
 
-	VarDictFields []varDictField
-	VarDictMap    *structField
+func (s *structInfo) String() string {
+	var ret strings.Builder
+	name, typ := s.Name, s.Type.String()
+	if s.Type.Kind() == reflect.Struct {
+		typ = "struct"
+	}
+	fmt.Fprintf(&ret, "%s: %s, fields:\n", name, typ)
+	for _, f := range s.StructFields {
+		ret.WriteString(f.String())
+		ret.WriteByte('\n')
+	}
+	return ret.String()
 }
 
 func getStructInfo(t reflect.Type) (*structInfo, error) {
@@ -48,84 +101,111 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 		Type: t,
 	}
 
-	var varDictFields, otherFields []*structField
+	var (
+		varDictMap    *structField
+		varDictFields []*varDictField
+	)
 	for _, field := range reflect.VisibleFields(t) {
 		if field.Anonymous || !field.IsExported() {
 			continue
 		}
-		fi := getStructField(field)
-		if fi.IsVarDict() {
-			varDictFields = append(varDictFields, fi)
+
+		encodeZero, isVardict, vardictKey := parseStructTag(field)
+		fieldInfo := &structField{
+			Name:  field.Name,
+			Type:  field.Type,
+			Index: field.Index,
+		}
+
+		if isVardict {
+			if !isValidVarDictMapType(fieldInfo.Type) {
+				return nil, fmt.Errorf("vardict map %s.%s must be a map[K]dbus.Variant", ret.Name, fieldInfo.Name)
+			}
+			fieldInfo.VarDictFields = reflect.MakeMap(reflect.MapOf(
+				fieldInfo.Type.Key(),
+				reflect.TypeFor[*varDictField]()))
+			varDictMap = fieldInfo
+			ret.StructFields = append(ret.StructFields, fieldInfo)
+		} else if vardictKey != "" {
+			varDictFields = append(varDictFields, &varDictField{
+				structField: fieldInfo,
+				StrKey:      vardictKey,
+				EncodeZero:  encodeZero,
+			})
 		} else {
-			otherFields = append(otherFields, fi)
+			ret.StructFields = append(ret.StructFields, fieldInfo)
 		}
 	}
 
 	if len(varDictFields) == 0 {
 		// Simple struct, all done.
-		ret.StructFields = otherFields
 		return ret, nil
 	}
 
-	// Vardict struct. Validate its shape and parse out the keys for
-	// later use.
+	// Struct containing vardict fields. Vardict struct. Validate its
+	// shape and parse out keys for later use.
 
-	if len(otherFields) == 0 {
-		return nil, fmt.Errorf("missing map[K]dbus.Variant in vardict struct %s", ret.Name)
-	}
-	if len(otherFields) > 1 {
-		return nil, fmt.Errorf("multiple untagged fields in vardict struct %s, expecting only one of type map[K]dbus.Variant", ret.Name)
-	}
-	mt := otherFields[0].Type
-	if !isValidVarDictMapType(mt) {
-		return nil, fmt.Errorf("untagged field %s of struct %s must be a map[K]dbus.Variant", ret.Name, otherFields[0].Name)
+	if varDictMap == nil {
+		return nil, fmt.Errorf("vardict fields declared in struct %s, but no map[K]dbus.Variant tagged with 'vardict'", ret.Name)
 	}
 
-	ret.VarDictMap = otherFields[0]
-	seen := map[string]bool{}
-	keyParser := typeParser(mt.Key())
+	seen := map[string]*varDictField{}
+	keyParser := mapKeyParser(varDictMap.Type.Key())
 	for _, f := range varDictFields {
-		v, err := keyParser(f.VarDictKey)
+		v, err := keyParser(f.StrKey)
 		if err != nil {
-			return nil, fmt.Errorf("invalid vardict key %q for type %s in vardict struct %s: %w", f.VarDictKey, mt.Key(), ret.Name, err)
+			return nil, fmt.Errorf("invalid key %q for vardict field %s.%s (expected type %s): %w", f.StrKey, ret.Name, f.Name, varDictMap.Type.Key(), err)
 		}
-		if seen[v.String()] {
-			return nil, fmt.Errorf("duplicate vardict key %q for type %s", v.String(), ret.Name)
+
+		// Careful, v.String() only returns the underlying value if
+		// it's a string or implements Stringer! Other values get a
+		// placeholder with just the type name. fmt has special
+		// handling of reflect.Value to always print the underlying
+		// value.
+		canonicalKey := fmt.Sprint(v)
+		f.Key = v
+		if prev := seen[canonicalKey]; prev != nil {
+			if canonicalKey != f.StrKey {
+				return nil, fmt.Errorf("duplicate vardict key %q (canonicalized from %q) in struct %s, used by %s and %s", canonicalKey, f.StrKey, ret.Name, f.Name, prev.Name)
+			}
+			return nil, fmt.Errorf("duplicate vardict key %q for type %s", f.StrKey, ret.Name)
 		}
-		ret.VarDictFields = append(ret.VarDictFields, varDictField{f, v})
+		// Parsing the key can change its value (e.g. ParseBool
+		// coerces "true", "TRUE", "1" to bool(true)). Store the
+		// canonical key.
+		f.StrKey = canonicalKey
+		varDictMap.VarDictFields.SetMapIndex(f.Key, reflect.ValueOf(f))
 	}
 
 	return ret, nil
 }
 
-func getStructField(f reflect.StructField) *structField {
-	ret := &structField{
-		Name:  f.Name,
-		Index: f.Index,
-		Type:  f.Type,
-	}
-
-	t := f.Tag.Get("dbus")
-	for _, f := range strings.Split(t, ",") {
-		if f == "variant" {
-			ret.UseVariantEncoding = true
-		} else if f == "encodeZero" {
-			ret.EncodeZeroValue = true
+func parseStructTag(field reflect.StructField) (encodeZero, isVardict bool, vardictKey string) {
+	for _, f := range strings.Split(field.Tag.Get("dbus"), ",") {
+		if f == "encodeZero" {
+			encodeZero = true
+		} else if f == "vardict" {
+			isVardict = true
 		} else if val, ok := strings.CutPrefix(f, "key="); ok {
 			if val == "@" {
-				val = ret.Name
+				vardictKey = field.Name
+			} else {
+				vardictKey = val
 			}
-			ret.VarDictKey = val
 		}
 	}
-	return ret
+	return encodeZero, isVardict, vardictKey
 }
 
 func isValidVarDictMapType(t reflect.Type) bool {
 	return t.Kind() == reflect.Map && mapKeyKinds.Has(t.Key().Kind()) && t.Elem() == variantType
 }
 
-func typeParser(t reflect.Type) func(string) (reflect.Value, error) {
+func mapKeyParser(t reflect.Type) func(string) (reflect.Value, error) {
+	if !mapKeyKinds.Has(t.Kind()) {
+		panic("mapKeyParser called on type that can't be a map key")
+	}
+
 	switch t.Kind() {
 	case reflect.Bool:
 		return func(s string) (reflect.Value, error) {
@@ -168,7 +248,7 @@ func typeParser(t reflect.Type) func(string) (reflect.Value, error) {
 	}
 }
 
-func newMapKeyCompare(t reflect.Type) func(a, b reflect.Value) int {
+func mapKeyCmp(t reflect.Type) func(a, b reflect.Value) int {
 	switch t.Kind() {
 	case reflect.Bool:
 		return func(a, b reflect.Value) int {

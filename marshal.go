@@ -330,74 +330,74 @@ func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 }
 
-type structFieldEncoder struct {
-	idx []int
-	enc fragments.EncoderFunc
-}
-
-type structEncoder []structFieldEncoder
-
-func (fs structEncoder) encode(st *fragments.Encoder, v reflect.Value) error {
-	return st.Struct(func() error {
-		for _, f := range fs {
-			fv := v.FieldByIndex(f.idx)
-			if err := f.enc(st, fv); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 func newStructEncoder(t reflect.Type) fragments.EncoderFunc {
-	debugEncoder("%s{}", t)
-	ret := structEncoder{}
 	fs, err := getStructInfo(t)
 	if err != nil {
 		return newErrEncoder(t, err.Error())
 	}
-	if fs.VarDictMap != nil {
-		return newVarDictEncoder(fs)
-	} else if len(fs.StructFields) == 0 {
+	if len(fs.StructFields) == 0 {
 		return newErrEncoder(t, "no exported struct fields")
 	}
+
+	var frags []fragments.EncoderFunc
 	for _, f := range fs.StructFields {
-		debugEncoder("%s.%s{%s}", t, f.Name, f.Type)
-		var fEnc fragments.EncoderFunc
-		if f.UseVariantEncoding {
-			varEnc := encoders.Get(variantType)
-			fEnc = func(e *fragments.Encoder, v reflect.Value) error {
-				return varEnc(e, reflect.ValueOf(Variant{v.Interface()}))
-			}
-		} else {
-			fEnc = encoders.Get(f.Type)
-		}
-		ret = append(ret, structFieldEncoder{f.Index, fEnc})
+		frags = append(frags, newStructFieldEncoder(f))
 	}
-	return ret.encode
+
+	return func(e *fragments.Encoder, v reflect.Value) error {
+		e.Struct(func() error {
+			for _, frag := range frags {
+				if err := frag(e, v); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		return nil
+	}
 }
 
-func newVarDictEncoder(fs *structInfo) fragments.EncoderFunc {
-	kEnc := encoders.Get(fs.VarDictMap.Type.Key())
-	vEnc := encoders.Get(variantType)
-	kCmp := newMapKeyCompare(fs.VarDictMap.Type.Key())
-	slices.SortFunc(fs.VarDictFields, func(a, b varDictField) int {
-		return kCmp(a.key, b.key)
-	})
+// Note, the returned fragment encoder expects to be given the entire
+// struct, not just the one field being encoded.
+func newStructFieldEncoder(f *structField) fragments.EncoderFunc {
+	if f.IsVarDict() {
+		return newVarDictFieldEncoder(f)
+	} else {
+		fEnc := encoders.Get(f.Type)
+		return func(e *fragments.Encoder, v reflect.Value) error {
+			fv := v.FieldByIndex(f.Index)
+			return fEnc(e, fv)
+		}
+	}
+}
 
-	return func(st *fragments.Encoder, v reflect.Value) error {
-		return st.Array(true, func() error {
-			for _, f := range fs.VarDictFields {
+// Note, the returned fragment encoder expects to be given the entire
+// struct, not just the one field being encoded.
+func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
+	kEnc := encoders.Get(f.Type.Key())
+	vEnc := encoders.Get(variantType)
+	kCmp := f.VarDictKeyCmp()
+
+	fieldKeys := f.VarDictFields.MapKeys()
+	slices.SortFunc(fieldKeys, kCmp)
+	var varDictFields []*varDictField
+	for _, k := range fieldKeys {
+		varDictFields = append(varDictFields, f.VarDictField(k))
+	}
+
+	return func(e *fragments.Encoder, v reflect.Value) error {
+		return e.Array(true, func() error {
+			for _, f := range varDictFields {
 				fv := v.FieldByIndex(f.Index)
-				if fv.IsZero() && !f.EncodeZeroValue {
+				if fv.IsZero() && !f.EncodeZero {
 					continue
 				}
 
-				err := st.Struct(func() error {
-					if err := kEnc(st, f.key); err != nil {
+				err := e.Struct(func() error {
+					if err := kEnc(e, f.Key); err != nil {
 						return err
 					}
-					if err := vEnc(st, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
+					if err := vEnc(e, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
 						return err
 					}
 					return nil
@@ -407,16 +407,16 @@ func newVarDictEncoder(fs *structInfo) fragments.EncoderFunc {
 				}
 			}
 
-			other := v.FieldByIndex(fs.VarDictMap.Index)
+			other := v.FieldByIndex(f.Index)
 			ks := other.MapKeys()
 			slices.SortFunc(ks, kCmp)
-			for _, mk := range ks {
-				mv := other.MapIndex(mk)
-				err := st.Struct(func() error {
-					if err := kEnc(st, mk); err != nil {
+			for _, mapKey := range ks {
+				mapVal := other.MapIndex(mapKey)
+				err := e.Struct(func() error {
+					if err := kEnc(e, mapKey); err != nil {
 						return err
 					}
-					if err := vEnc(st, mv); err != nil {
+					if err := vEnc(e, mapVal); err != nil {
 						return err
 					}
 					return nil
@@ -440,7 +440,7 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	kEnc := encoders.Get(kt)
 	vt := t.Elem()
 	vEnc := encoders.Get(vt)
-	kCmp := newMapKeyCompare(kt)
+	kCmp := mapKeyCmp(kt)
 
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		ks := v.MapKeys()
