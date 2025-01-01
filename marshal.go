@@ -13,15 +13,14 @@ import (
 // ordering.
 //
 // Marshal traverses the value v recursively. If an encountered value
-// implements [Marshaler], Marshal calls [Marshaler.MarshalDBus] to
-// produce its encoding.
+// implements [Marshaler], Marshal calls MarshalDBus on it to produce
+// its encoding.
 //
 // Otherwise, Marshal uses the following type-dependent default
 // encodings:
 //
-// Fixed width integer, boolean, float64, and string values encode to
-// their corresponding DBus basic types. float32 values encode like
-// float64.
+// uint{8,16,32,64}, int{16,32,64}, float64, bool and string values
+// encode to the corresponding DBus basic type.
 //
 // Array and slice values encode as DBus arrays. Nil slices encode the
 // same as an empty slice.
@@ -33,7 +32,8 @@ import (
 // rules.
 //
 // Map values encode as a DBus dictionary, i.e. an array of key/value
-// pairs. The map's key type must be a number, boolean or string.
+// pairs. The map's key underlying type must be uint{8,16,32,64},
+// int{16,32,64}, float64, bool, or string.
 //
 // Pointer values encode as the value pointed to. A nil pointer
 // encodes as the zero value of the type pointed to.
@@ -42,16 +42,15 @@ import (
 // the corresponding DBus types.
 //
 // [Variant] values encode as DBus variants. The Variant's inner value
-// must be a value acceptable to Marshal, or it will return a
-// [TypeError].
-//
-// [int], [uint], interface, channel, complex, and function values
-// cannot be encoded. Attempting to encode such values causes Marshal
-// to return a [TypeError].
-//
-// DBus cannot represent cyclic or recursive types, and Marshal does
-// not handle them. Attempting to encode such values causes Marshal to
+// must be a valid value according to these rules, or Marshal will
 // return a [TypeError].
+//
+// int8, int, uint, uintptr, complex64, complex128, interface,
+// channel, and function values cannot be encoded. Attempting to
+// encode such values causes Marshal to return a [TypeError].
+//
+// DBus cannot represent cyclic or recursive types. Attempting to
+// encode such values causes Marshal to return a [TypeError].
 func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
 	enc := encoders.GetRecover(val.Type())
@@ -68,14 +67,11 @@ func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
 // Marshaler is the interface implemented by types that can marshal
 // themselves to the DBus wire format.
 //
-// [Unmarshaler.SignatureDBus] and [Unmarshaler.AlignDBus] should
-// return constants, to match the required semantics of the methods in
-// the [Unmarshaler] interface. Advanced [Marshal]-only types may vary
-// the [Signature] and alignment based on the value being encoded, but
-// the signature and alignment of a particular value must be constant.
+// SignatureDBus and AlignDBus must return constants that do not
+// depend on the value being encoded.
 //
-// [Marshaler.MarshalDBus] may assume that the output has already been
-// padded according to the value returned by [Marshaler.AlignDBus].
+// MarshalDBus may assume that the output has already been padded
+// according to the value returned by AlignDBus.
 type Marshaler interface {
 	SignatureDBus() Signature
 	AlignDBus() int
@@ -103,7 +99,7 @@ func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 	if t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(marshalerType) {
 		return newCondAddrMarshalEncoder(t)
 	} else if t.Implements(marshalerType) {
-		return newMarshalEncoder(t)
+		return newMarshalEncoder()
 	}
 
 	switch t.Kind() {
@@ -113,10 +109,14 @@ func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 		return newBoolEncoder()
 	case reflect.Int, reflect.Uint:
 		return newErrEncoder(t, "int and uint aren't portable, use fixed width integers")
+	case reflect.Int8:
+		return newErrEncoder(t, "int8 has no corresponding DBus type, use uint8 instead")
 	case reflect.Int16, reflect.Int32, reflect.Int64:
 		return newIntEncoder(t)
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return newUintEncoder(t)
+	case reflect.Float32:
+		return newErrEncoder(t, "float32 has no corresponding DBus type, use float64 instead")
 	case reflect.Float64:
 		return newFloatEncoder()
 	case reflect.String:
@@ -156,9 +156,9 @@ func newErrEncoder(t reflect.Type, reason string) fragments.EncoderFunc {
 }
 
 func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
-	ptr := newMarshalEncoder(reflect.PointerTo(t))
+	ptr := newMarshalEncoder()
 	if t.Implements(marshalerType) {
-		val := newMarshalEncoder(t)
+		val := newMarshalEncoder()
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			if v.CanAddr() {
 				return ptr(st, v.Addr())
@@ -176,7 +176,7 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 }
 
-func newMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
+func newMarshalEncoder() fragments.EncoderFunc {
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		m := v.Interface().(Marshaler)
 		st.Pad(m.AlignDBus())

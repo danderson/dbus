@@ -9,9 +9,9 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
-// Unmarshal parses the DBus wire message data and stores the result
-// in the value pointed to by v. If v is nil or not a pointer,
-// Unmarshal returns a [TypeError].
+// Unmarshal reads a DBus message from r and stores the result in the
+// value pointed to by v. If v is nil or not a pointer, Unmarshal
+// returns a [TypeError].
 //
 // Generally, Unmarshal applies the inverse of the rules used by
 // [Marshal]. The layout of the wire message must be compatible with
@@ -19,38 +19,34 @@ import (
 // their signature, it is up to the caller to know the expected
 // message format and match it.
 //
-// Unmarshal traverses the value v recursively. If an encountered value
-// implements [Unmarshaler], Unmarshal calls
-// [Unmarshaler.UnmarshalDBus] to unmarshal it. Types implementing
-// [Unmarshaler] must use a pointer receiver on
-// [Unmarshaler.UnmarshalDBus]. Attempting to unmarshal using a value
-// receiver UnmarshalDBus method results in a [TypeError].
+// Unmarshal traverses the value v recursively. If an encountered
+// value implements [Unmarshaler], Unmarshal calls UnmarshalDBus to
+// unmarshal it. Types implementing [Unmarshaler] must implement
+// UnmarshalDBus with a pointer receiver. Attempting to unmarshal
+// using an UnmarshalDBus method with a value receiver results in a
+// [TypeError].
 //
 // Otherwise, Unmarshal uses the following type-dependent default
 // encodings:
 //
-// DBus integer, boolean, float and string values decode into the
-// corresponding Go types. DBus floats are exclusively double
-// precision, but can be decoded into float64, or float32 with a loss
-// of precision.
+// uint{8,16,32,64}, int{16,32,64}, float64, bool and string values
+// encode the corresponding DBus basic types.
 //
-// DBus arrays can decode into Go slices or arrays. When decoding into
-// an array, the message's array length must match the target array's
+// Array and slice values decode DBus arrays. When decoding into an
+// array, the message's array length must match the target array's
 // length. When decoding into a slice, Unmarshal resets the slice
 // length to zero and then appends each element to the slice.
 //
-// DBus structs decode into Go structs. Message fields decode into
-// struct fields in declaration order, according to the Go struct
-// field's type. Embedded struct fields are decoded as if their inner
-// exported fields were fields in the outer struct, subject to the
-// usual Go visibility rules.
+// Struct values decode DBus structs. The message's fields decode into
+// the target struct's fields in declaration order. Embedded struct
+// fields are decoded as if their inner exported fields were fields in
+// the outer struct, subject to the usual Go visibility rules.
 //
-// DBus dictionaries decode into Go maps. When decoding into a map,
-// Unmarshal first clears the map, or allocates a new one if the
-// target map is nil. Then, the dictionary's key-value pairs are
-// stored into the map in message order. If the message's map contains
-// duplicate entries for a key, all but the last entry's value are
-// discarded.
+// Maps decode DBus dictionaries. When decoding into a map, Unmarshal
+// first clears the map, or allocates a new one if the target map is
+// nil. Then, the incoming key-value pairs are stored into the map in
+// message order. If the incoming dictionary contains duplicate values
+// for a key, all but the last value are discarded.
 //
 // Pointers decode as the value pointed to. Unmarshal allocates zero
 // values as needed when it encounters nil pointers.
@@ -58,11 +54,16 @@ import (
 // [Signature], [ObjectPath], and [FileDescriptor] decode the
 // corresponding DBus types.
 //
-// DBus variant values currently cannot be decoded (TODO).
+// [Variant] values decode DBus variants. The type of the variant's
+// inner value is determined by the type signature carried in the
+// message. Variants containing a struct are decoded into an anonymous
+// struct with fields named Field0, Field1, ..., FieldN in message
+// order.
 //
-// [int], [uint], interface, channel, complex and function values have
-// no equivalent DBus type. If Unmarshal encounters such a value it
-// will return a [TypeError].
+// int8, int, uint, uintptr, complex64, complex128, interface,
+// channel, and function values cannot decode any DBus type.
+// Attempting to decode such values causes Unmarshal to return a
+// [TypeError].
 //
 // DBus cannot represent cyclic or recursive types. Attempting to
 // decode into such values causes Unmarshal to return a
@@ -90,17 +91,15 @@ func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 // Unmarshaler is the interface implemented by types that can
 // unmarshal themselves.
 //
-// [Unmarshaler.SignatureDBus] and [Unmarshaler.AlignDBus] are called
-// with zero receivers, and therefore the returned [Signature] and
-// alignment cannot depend on the incoming message.
+// SignatureDBus and AlignDBus must return constants that do not
+// depend on the value being decoded.
 //
-// [Unmarshaler.UnmarshalDBus] must have a pointer receiver. If
-// Unmarshal encounters an Unmarshaler whose UnmarshalDBus method
-// takes a value receiver, it will return a [TypeError].
+// UnmarshalDBus must have a pointer receiver. If Unmarshal encounters
+// an Unmarshaler whose UnmarshalDBus method takes a value receiver,
+// it will return a [TypeError].
 //
-// [Unmarshaler.UnmarshalDBus] may assume that the output has already
-// been padded according to the value returned by
-// [Unmarshaler.AlignDBus].
+// UnmarshalDBus may assume that the output has already been padded
+// according to the value returned by AlignDBus.
 type Unmarshaler interface {
 	SignatureDBus() Signature
 	AlignDBus() int
@@ -417,7 +416,7 @@ func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 
 	var frags []fragments.DecoderFunc
 	for _, f := range fs.StructFields {
-		frags = append(frags, newStructFieldDecoder(t, f))
+		frags = append(frags, newStructFieldDecoder(f))
 	}
 
 	return func(d *fragments.Decoder, v reflect.Value) error {
@@ -434,9 +433,9 @@ func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 
 // Note, the returned fragment decoder expects to be given the entire
 // struct, not just the one field being decoded.
-func newStructFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFunc {
+func newStructFieldDecoder(f *structField) fragments.DecoderFunc {
 	if f.IsVarDict() {
-		return newVarDictFieldDecoder(t, f)
+		return newVarDictFieldDecoder(f)
 	} else {
 		fDec := decoders.Get(f.Type)
 		return func(d *fragments.Decoder, v reflect.Value) error {
@@ -448,7 +447,7 @@ func newStructFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFunc
 
 // Note, the returned fragment decoder expects to be given the entire
 // struct, not just the one field being decoded.
-func newVarDictFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFunc {
+func newVarDictFieldDecoder(f *structField) fragments.DecoderFunc {
 	kDec := decoders.Get(f.Type.Key())
 	vDec := decoders.Get(variantType)
 
@@ -511,9 +510,7 @@ func newVarDictFieldDecoder(t reflect.Type, f *structField) fragments.DecoderFun
 
 func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 	kt := t.Key()
-	switch kt.Kind() {
-	case reflect.Bool, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.String:
-	default:
+	if !mapKeyKinds.Has(kt.Kind()) {
 		return newErrDecoder(t, fmt.Sprintf("invalid map key type %s", kt))
 	}
 	kDec := decoders.Get(kt)

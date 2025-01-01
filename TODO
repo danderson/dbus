@@ -18,3 +18,5 @@ it where dbus wants a dict, it'll get padded wrong.
 
 support encoding maps as either a{xy} or a(xy). Various dbus protocols
 use the latter for some reason.
+
+document how the vardict stuff works in the API docs.
