@@ -175,3 +175,15 @@ type VarDictByte struct {
 
 	Other map[byte]dbus.Variant `dbus:"vardict"`
 }
+
+func mustMarshal(v any) []byte {
+	bs, err := dbus.Marshal(v, fragments.BigEndian)
+	if err != nil {
+		panic(err)
+	}
+	return bs
+}
+
+func ptr[T any](v T) *T {
+	return &v
+}

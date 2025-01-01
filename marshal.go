@@ -35,6 +35,26 @@ import (
 // pairs. The map's key underlying type must be uint{8,16,32,64},
 // int{16,32,64}, float64, bool, or string.
 //
+// Several DBus protocols use map[K]dbus.Variant values to extend
+// structs with new fields in a backwards compatible way. To support
+// this "vardict" idiom, structs may contain a single "vardict" field
+// and several "associated" fields:
+//
+//	struct Vardict{
+//	    // A "vardict" map for the struct.
+//	    M map[uint8]dbus.Variant `dbus:"vardict"`
+//
+//	    // "associated" fields. Associated fields can be declared
+//	    // anywhere in the struct, before or after the vardict field.
+//	    Foo string `dbus:"key=1"`
+//	    Bar uint32 `dbus:"key=2"`
+//	}
+//
+// A vardict field encodes as a DBus dictionary just like a regular
+// map, except that associated fields with nonzero values are encoded
+// as additional key/value pairs. An associated field can be tagged
+// with `dbus:"key=X,encodeZero"` to encode its zero value as well.
+//
 // Pointer values encode as the value pointed to. A nil pointer
 // encodes as the zero value of the type pointed to.
 //

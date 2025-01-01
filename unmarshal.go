@@ -48,6 +48,28 @@ import (
 // message order. If the incoming dictionary contains duplicate values
 // for a key, all but the last value are discarded.
 //
+// Several DBus protocols use map[K]dbus.Variant values to extend
+// structs with new fields in a backwards compatible way. To support
+// this "vardict" idiom, structs may contain a single "vardict" field
+// and several "associated" fields:
+//
+//	struct Vardict{
+//	    // A "vardict" map for the struct.
+//	    M map[uint8]dbus.Variant `dbus:"vardict"`
+//
+//	    // "associated" fields. Associated fields can be declared
+//	    // anywhere in the struct, before or after the vardict field.
+//	    Foo string `dbus:"key=1"`
+//	    Bar uint32 `dbus:"key=2"`
+//	}
+//
+// A vardict field decodes a DBus dictionary just like regular map,
+// except that if an incoming key matches an associated field's tag,
+// the corresponding value decodes into that associated field instead,
+// with the [Variant] envelope removed. If the associated field's type
+// is incompatible with the received map value, Unmarshal returns a
+// [TypeError].
+//
 // Pointers decode as the value pointed to. Unmarshal allocates zero
 // values as needed when it encounters nil pointers.
 //
