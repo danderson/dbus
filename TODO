@@ -1,20 +1,8 @@
 More, better error types. Currently we return ErrUnrepresentable for
 most things, even when the problem isn't representability.
 
-Decode variant types. Requires implementing some kind of DynamicStruct
-or RawStruct helper type.
-
-Implement the dbus.Message type.
-
 Implement FileDescriptor properly, with stashing/unstashing of file
 descriptors in encoder/decoder state.
-
-Implement the transport and actually talk to dbus.
-
-Figure out clean representations for map[K]dbus.Variant, so that user
-code doesn't have to type assert all over the place for maps that have
-a known key->signature(value) mapping (like the dbus.Message optional
-headers).
 
 Figure out an approach to fuzz Marshal/Unmarshal.
 
@@ -25,12 +13,11 @@ array, for the weird start padding on zero-length arrays thing. Many
 values could implement just MarshalDBus/UnmarshalDBus and live happily
 ever after.
 
-tests for int8 vs. uint8 handling, dbus wire format only has uint8 but
-we want to support int8 too. Or do we?
-
 Better handling of nil embedded structs in marshal, I think right now
 it'll just panic.
 
 Combine struct and vardict into one uber-struct-and-vardict type.
 Makes header work better, probably better ergonomics elsewhere too
 for types that are trying to be "extensible structs".
+
+finish implementing Conn for incoming calls and signals
