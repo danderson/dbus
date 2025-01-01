@@ -2,7 +2,6 @@ package dbus
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"reflect"
 	"slices"
@@ -66,17 +65,6 @@ func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
 	return st.Out, nil
 }
 
-// debugEncoders enables spammy debug logging during the construction
-// of encoder funcs.
-const debugEncoders = false
-
-func debugEncoder(msg string, args ...any) {
-	if !debugEncoders {
-		return
-	}
-	log.Printf(msg, args...)
-}
-
 // Marshaler is the interface implemented by types that can marshal
 // themselves to the DBus wire format.
 //
@@ -109,9 +97,6 @@ func init() {
 
 // uncachedTypeEncoder returns the EncoderFunc for t.
 func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
-	debugEncoder("typeEncoder(%s)", t)
-	defer debugEncoder("end typeEncoder(%s)", t)
-
 	// If a value's pointer type implements Unmarshaler, we can avoid
 	// a value copy by using it. But we can only use it for
 	// addressable values, which requires an additional runtime check.
@@ -173,7 +158,6 @@ func newErrEncoder(t reflect.Type, reason string) fragments.EncoderFunc {
 func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 	ptr := newMarshalEncoder(reflect.PointerTo(t))
 	if t.Implements(marshalerType) {
-		debugEncoder("%s{} (external marshaler, w/ addressable optimization)", t)
 		val := newMarshalEncoder(t)
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			if v.CanAddr() {
@@ -183,7 +167,6 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 			}
 		}
 	} else {
-		debugEncoder("%s{} (external marshaler, addressable only)", t)
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			if !v.CanAddr() {
 				return typeErr(t, "Marshaler is only implemented on pointer receiver, and cannot take the address of given value")
@@ -194,7 +177,6 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 }
 
 func newMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
-	debugEncoder("%s{} (external Marshaler)", t)
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		m := v.Interface().(Marshaler)
 		st.Pad(m.AlignDBus())
@@ -203,7 +185,6 @@ func newMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 }
 
 func newPtrEncoder(t reflect.Type) fragments.EncoderFunc {
-	debugEncoder("ptr{%s}", t.Elem())
 	elemEnc := encoders.Get(t.Elem())
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		if v.IsNil() {
@@ -214,7 +195,6 @@ func newPtrEncoder(t reflect.Type) fragments.EncoderFunc {
 }
 
 func newBoolEncoder() fragments.EncoderFunc {
-	debugEncoder("bool{}")
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		val := uint32(0)
 		if v.Bool() {
@@ -228,19 +208,16 @@ func newBoolEncoder() fragments.EncoderFunc {
 func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
 	case 2:
-		debugEncoder("int16{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint16(uint16(v.Int()))
 			return nil
 		}
 	case 4:
-		debugEncoder("int32{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint32(uint32(v.Int()))
 			return nil
 		}
 	case 8:
-		debugEncoder("int64{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint64(uint64(v.Int()))
 			return nil
@@ -253,25 +230,21 @@ func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
 	case 1:
-		debugEncoder("uint8{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint8(uint8(v.Uint()))
 			return nil
 		}
 	case 2:
-		debugEncoder("uint16{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint16(uint16(v.Uint()))
 			return nil
 		}
 	case 4:
-		debugEncoder("uint32{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint32(uint32(v.Uint()))
 			return nil
 		}
 	case 8:
-		debugEncoder("uint64{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Uint64(v.Uint())
 			return nil
@@ -282,7 +255,6 @@ func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 }
 
 func newFloatEncoder() fragments.EncoderFunc {
-	debugEncoder("float64{}")
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		st.Uint64(math.Float64bits(v.Float()))
 		return nil
@@ -290,7 +262,6 @@ func newFloatEncoder() fragments.EncoderFunc {
 }
 
 func newStringEncoder() fragments.EncoderFunc {
-	debugEncoder("string{}")
 	return func(st *fragments.Encoder, v reflect.Value) error {
 		st.String(v.String())
 		return nil
@@ -300,14 +271,12 @@ func newStringEncoder() fragments.EncoderFunc {
 func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 	if t.Elem().Kind() == reflect.Uint8 {
 		// Fast path for []byte
-		debugEncoder("[]byte{}")
 		return func(st *fragments.Encoder, v reflect.Value) error {
 			st.Bytes(v.Bytes())
 			return nil
 		}
 	}
 
-	debugEncoder("[]%s{}", t.Elem())
 	elemEnc := encoders.Get(t.Elem())
 	var isStruct bool
 	if t.Elem().Implements(marshalerType) {
@@ -432,7 +401,6 @@ func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
 }
 
 func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
-	debugEncoder("map[%s]%s{}", t.Key(), t.Elem())
 	kt := t.Key()
 	if !mapKeyKinds.Has(kt.Kind()) {
 		return newErrEncoder(t, fmt.Sprintf("invalid map key type %s", kt))

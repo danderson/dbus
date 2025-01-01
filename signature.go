@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"log"
 	"reflect"
 	"strings"
 
@@ -280,15 +279,6 @@ func init() {
 		})
 }
 
-const debugSignatures = false
-
-func debugSignature(msg string, args ...any) {
-	if !debugSignatures {
-		return
-	}
-	log.Printf(msg, args...)
-}
-
 // SignatureFor returns the Signature for the given type.
 func SignatureFor[T any]() (Signature, error) {
 	ret := signatures.GetRecover(reflect.TypeFor[T]())
@@ -335,9 +325,6 @@ func sigErr(t reflect.Type, reason string) Signature {
 }
 
 func signatureOf(t reflect.Type) Signature {
-	debugSignature("signatureOf(%s)", t)
-	defer debugSignature("end signatureOf(%s)", t)
-
 	ret := signatures.Get(t)
 	if ret.err != nil {
 		signatures.Unwind(ret)
@@ -346,8 +333,6 @@ func signatureOf(t reflect.Type) Signature {
 }
 
 func uncachedSignatureOf(t reflect.Type) Signature {
-	debugSignature("uncachedSignatureOf(%s)", t)
-	defer debugSignature("end uncachedSignatureOf(%s)", t)
 	if t == nil {
 		return sigErr(t, "nil interface")
 	}

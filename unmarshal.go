@@ -3,7 +3,6 @@ package dbus
 import (
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"reflect"
 
@@ -88,17 +87,6 @@ func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 	return dec(&st, val.Elem())
 }
 
-// debugDecoders enables spammy debug logging during the construction
-// of decoder funcs.
-const debugDecoders = false
-
-func debugDecoder(msg string, args ...any) {
-	if !debugDecoders {
-		return
-	}
-	log.Printf(msg, args...)
-}
-
 // Unmarshaler is the interface implemented by types that can
 // unmarshal themselves.
 //
@@ -140,9 +128,6 @@ func init() {
 
 // uncachedTypeDecoder returns the DecoderFunc for t.
 func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
-	debugDecoder("typeDecoder(%s)", t)
-	defer debugDecoder("end typeDecoder(%s)", t)
-
 	// We only want Unmarshalers with pointer receivers, since a value
 	// receiver would silently discard the results of the
 	// UnmarshalDBus call and lead to confusing bugs. There are two
@@ -223,7 +208,6 @@ func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
 }
 
 func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
-	debugDecoder("%s{} (external Unmarshaler, addressable)", t)
 	ptr := newMarshalDecoder(reflect.PointerTo(t))
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		return ptr(st, v.Addr())
@@ -231,7 +215,6 @@ func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
-	debugDecoder("%s{} (external Unmarshaler)", t)
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			elem := reflect.New(t.Elem())
@@ -244,7 +227,6 @@ func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
-	debugDecoder("ptr{%s}", t.Elem())
 	elem := t.Elem()
 	elemDec := decoders.Get(elem)
 	return func(st *fragments.Decoder, v reflect.Value) error {
@@ -265,7 +247,6 @@ func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newBoolDecoder() fragments.DecoderFunc {
-	debugDecoder("bool{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		u, err := st.Uint32()
 		if err != nil {
@@ -279,7 +260,6 @@ func newBoolDecoder() fragments.DecoderFunc {
 func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
-		debugDecoder("int8{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u8, err := st.Uint8()
 			if err != nil {
@@ -289,7 +269,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 2:
-		debugDecoder("int16{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u16, err := st.Uint16()
 			if err != nil {
@@ -299,7 +278,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 4:
-		debugDecoder("int32{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u32, err := st.Uint32()
 			if err != nil {
@@ -309,7 +287,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 8:
-		debugDecoder("int64{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u64, err := st.Uint64()
 			if err != nil {
@@ -326,7 +303,6 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
-		debugDecoder("uint8{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u8, err := st.Uint8()
 			if err != nil {
@@ -336,7 +312,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 2:
-		debugDecoder("uint16{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u16, err := st.Uint16()
 			if err != nil {
@@ -346,7 +321,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 4:
-		debugDecoder("uint32{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u32, err := st.Uint32()
 			if err != nil {
@@ -356,7 +330,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 8:
-		debugDecoder("uint64{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			u64, err := st.Uint64()
 			if err != nil {
@@ -371,7 +344,6 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newFloatDecoder() fragments.DecoderFunc {
-	debugDecoder("float64{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		u64, err := st.Uint64()
 		if err != nil {
@@ -383,7 +355,6 @@ func newFloatDecoder() fragments.DecoderFunc {
 }
 
 func newStringDecoder() fragments.DecoderFunc {
-	debugDecoder("string{}")
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		s, err := st.String()
 		if err != nil {
@@ -396,7 +367,6 @@ func newStringDecoder() fragments.DecoderFunc {
 
 func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	if t.Elem().Kind() == reflect.Uint8 {
-		debugDecoder("[]byte{}")
 		return func(st *fragments.Decoder, v reflect.Value) error {
 			bs, err := st.Bytes()
 			if err != nil {
@@ -407,7 +377,6 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 		}
 	}
 
-	debugDecoder("[]%s{}", t.Elem())
 	elemDec := decoders.Get(t.Elem())
 	var isStruct bool
 	if t.Elem().Implements(unmarshalerType) {
@@ -601,7 +570,6 @@ func allocSteps(t reflect.Type, idx []int) [][]int {
 }
 
 func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
-	debugDecoder("map[%s]%s{}", t.Key(), t.Elem())
 	kt := t.Key()
 	switch kt.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8, reflect.Int16, reflect.Uint16, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64, reflect.Float32, reflect.Float64, reflect.String:
