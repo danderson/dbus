@@ -79,13 +79,13 @@ func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 	if val.IsNil() {
 		return fmt.Errorf("can't unmarshal into a nil pointer")
 	}
-	dec := decoders.GetRecover(val.Type())
+	dec := decoders.GetRecover(val.Type().Elem())
 	st := fragments.Decoder{
 		Order:  ord,
 		Mapper: decoders.GetRecover,
 		In:     data,
 	}
-	return dec(&st, val)
+	return dec(&st, val.Elem())
 }
 
 // debugDecoders enables spammy debug logging during the construction
@@ -250,7 +250,7 @@ func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 	return func(st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			if !v.CanSet() {
-				return unrepresentable(t, "cannot unmarshal into nil pointer")
+				panic("got an unsettable nil pointer, should be impossible!")
 			}
 			elem := reflect.New(elem)
 			if err := elemDec(st, elem.Elem()); err != nil {
