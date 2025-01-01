@@ -189,6 +189,11 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	return nil
 }
 
+// Call calls a remote method over the bus and records the response in
+// the provided pointer.
+//
+// It is the caller's responsibility to supply the correct types of
+// request.Body and response for the method being called.
 func (c *Conn) Call(ctx context.Context, request Request, response any) error {
 	if response != nil && reflect.TypeOf(response).Kind() != reflect.Pointer {
 		return errors.New("response parameter in Call must be a pointer, or nil")
@@ -280,15 +285,40 @@ func (c *Conn) Call(ctx context.Context, request Request, response any) error {
 	}
 }
 
+// Request is a DBus method call request.
 type Request struct {
+	// Destination is the DBus peer to which the request should be
+	// sent.
 	Destination string
-	Path        ObjectPath
-	Interface   string
-	Method      string
+	// Path is the path to the target object published by the peer.
+	Path ObjectPath
+	// Interface is the name of the interface containing the method to
+	// invoke.
+	Interface string
+	// Method is the method to call on the interface.
+	Method string
 
-	OneWay           bool
+	// OneWay informs the peer that the call is one-way, with no
+	// response desired. The [Conn.Call] will complete as soon as the
+	// request has been sent, and there is no way to tell whether the
+	// peer received it or processed it successfully.
+	OneWay bool
+	// AllowInteraction, if true, indicates that you are willing to
+	// wait for an interactive authorization prompt, if the system
+	// policy requires it. Requests that allow interaction should
+	// expect a long delay (at least several seconds) to get a
+	// response. Making a non-interactive request to a privileged
+	// endpoint will promptly return a permission error.
 	AllowInteraction bool
-	NoAutoStart      bool
+	// NoAutoStart tells the bus that it must not automatically start
+	// services as a result of this request. Requests to a peer that
+	// would require on-demand starting will return an error.
+	NoAutoStart bool
 
+	// Body is the request body. The body's type signature must match
+	// the method being invoked. If the method accepts multiple
+	// parameters, Body must be a struct whose fields are the method
+	// parameters. Body can be nil for methods that take no input
+	// parameters.
 	Body any
 }
