@@ -79,6 +79,7 @@ type Conn struct {
 
 type pendingCall struct {
 	notify chan struct{}
+	iface  Interface
 	resp   any
 	err    error
 }
@@ -128,20 +129,28 @@ func (c *Conn) dispatchMsg() error {
 		return fmt.Errorf("received invalid header: %w", err)
 	}
 
+	ctx := context.Background()
+	if len(fs) > 0 {
+		ctx = withContextFiles(ctx, fs)
+	}
+	if hdr.Sender != "" && hdr.Path != "" && hdr.Interface != "" {
+		ctx = withContextSender(ctx, c.Peer(hdr.Sender).Object(hdr.Path).Interface(hdr.Interface))
+	}
+
 	switch hdr.Type {
 	case msgTypeCall:
 		log.Printf("TODO: CALL")
 	case msgTypeReturn:
-		return c.dispatchReturn(&hdr, bodyReader, fs)
+		return c.dispatchReturn(ctx, &hdr, bodyReader, fs)
 	case msgTypeError:
-		return c.dispatchErr(&hdr, bodyReader)
+		return c.dispatchErr(ctx, &hdr, bodyReader)
 	case msgTypeSignal:
-		return c.dispatchSignal(&hdr, bodyReader)
+		return c.dispatchSignal(ctx, &hdr, bodyReader)
 	}
 	return nil
 }
 
-func (c *Conn) dispatchReturn(hdr *header, body io.Reader, _ []*os.File) error {
+func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, _ []*os.File) error {
 	// TODO: correct pairing of files and body
 	pending := func() *pendingCall {
 		c.mu.Lock()
@@ -156,8 +165,10 @@ func (c *Conn) dispatchReturn(hdr *header, body io.Reader, _ []*os.File) error {
 		return nil
 	}
 
+	ctx = withContextSender(ctx, pending.iface)
+
 	if pending.resp != nil {
-		if err := Unmarshal(context.Background(), body, hdr.Order.Order(), pending.resp); err != nil {
+		if err := Unmarshal(ctx, body, hdr.Order.Order(), pending.resp); err != nil {
 			return err
 		}
 	}
@@ -165,7 +176,7 @@ func (c *Conn) dispatchReturn(hdr *header, body io.Reader, _ []*os.File) error {
 	return nil
 }
 
-func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
+func (c *Conn) dispatchErr(ctx context.Context, hdr *header, body io.Reader) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -208,7 +219,7 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	return nil
 }
 
-func (c *Conn) dispatchSignal(hdr *header, body io.Reader) error {
+func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) error {
 	signalFn := func() SignalTypeFunc {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -221,13 +232,13 @@ func (c *Conn) dispatchSignal(hdr *header, body io.Reader) error {
 	var signal any
 	var err error
 	if signalFn != nil {
-		signal, err = signalFn(context.Background(), iface, body)
+		signal, err = signalFn(ctx, iface, body)
 		if err != nil {
 			return err
 		}
 	} else if !hdr.Signature.IsZero() {
 		v := hdr.Signature.Value()
-		if err := Unmarshal(context.Background(), body, hdr.Order.Order(), v.Interface()); err != nil {
+		if err := Unmarshal(ctx, body, hdr.Order.Order(), v.Interface()); err != nil {
 			return err
 		}
 		signal = v.Elem().Interface()
