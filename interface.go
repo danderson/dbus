@@ -15,66 +15,44 @@ func (f Interface) Peer() Peer     { return f.o.Peer() }
 func (f Interface) Object() Object { return f.o }
 func (f Interface) Name() string   { return f.name }
 
-func (f Interface) Call(ctx context.Context, method string, body any, response any) error {
-	req := Request{
-		Destination: f.Peer().name,
-		Path:        f.Object().path,
-		Interface:   f.name,
-		Method:      method,
-		Body:        body,
-	}
-	return f.Conn().Call(ctx, req, response)
+func (f Interface) Call(ctx context.Context, method string, body any, response any, opts ...CallOption) error {
+	return f.Conn().call(ctx, f.Peer().name, f.Object().path, f.name, method, body, response, opts...)
 }
 
-func (f Interface) GetProp(ctx context.Context, name string) (any, error) {
-	req := Request{
-		Destination: f.Peer().name,
-		Path:        f.Object().path,
-		Interface:   "org.freedesktop.DBus.Properties",
-		Method:      "Get",
-		Body: struct {
-			InterfaceName string
-			PropertyName  string
-		}{f.name, name},
-	}
+func (f Interface) GetProp(ctx context.Context, name string, opts ...CallOption) (any, error) {
 	var resp Variant
-	if err := f.Conn().Call(ctx, req, &resp); err != nil {
-		return "", err
+	req := struct {
+		InterfaceName string
+		PropertyName  string
+	}{f.name, name}
+	err := f.Object().Interface("org.freedesktop.DBus.Properties").Call(ctx, "Get", req, &resp, opts...)
+	if err != nil {
+		return nil, err
 	}
 	return resp.Value, nil
 }
 
-func (f Interface) SetProp(ctx context.Context, name string, value any) error {
-	req := Request{
-		Destination: f.Peer().name,
-		Path:        f.Object().path,
-		Interface:   "org.freedesktop.DBus.Properties",
-		Method:      "Get",
-		Body: struct {
-			InterfaceName string
-			PropertyName  string
-			Value         Variant
-		}{f.name, name, Variant{value}},
-	}
-	if err := f.Conn().Call(ctx, req, nil); err != nil {
-		return err
-	}
-	return nil
+func (f Interface) SetProp(ctx context.Context, name string, value any, opts ...CallOption) error {
+	req := struct {
+		InterfaceName string
+		PropertyName  string
+		Value         Variant
+	}{f.name, name, Variant{value}}
+	return f.Object().Interface("org.freedesktop.DBus.Properties").Call(ctx, "Set", req, nil, opts...)
 }
 
-func (f Interface) GetAll(ctx context.Context) (map[string]Variant, error) {
-	req := Request{
-		Destination: f.Peer().name,
-		Path:        f.Object().path,
-		Interface:   "org.freedesktop.DBus.Properties",
-		Method:      "Get",
-		Body:        f.name,
-	}
+func (f Interface) GetAll(ctx context.Context, opts ...CallOption) (map[string]any, error) {
 	var resp map[string]Variant
-	if err := f.Conn().Call(ctx, req, &resp); err != nil {
+	err := f.Object().Interface("org.freedesktop.DBus.Properties").Call(ctx, "GetAll", f.name, &resp, opts...)
+	if err != nil {
 		return nil, err
 	}
-	return resp, nil
+
+	ret := make(map[string]any, len(resp))
+	for k, v := range resp {
+		ret[k] = v.Value
+	}
+	return ret, nil
 }
 
 func GetProperty[T any](ctx context.Context, iface Interface, name string) (T, error) {

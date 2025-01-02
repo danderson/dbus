@@ -17,15 +17,9 @@ func (o Object) Interface(name string) Interface {
 	}
 }
 
-func (o Object) Introspect(ctx context.Context) (string, error) {
-	req := Request{
-		Destination: o.p.name,
-		Path:        o.path,
-		Interface:   "org.freedesktop.DBus.Introspectable",
-		Method:      "Introspect",
-	}
+func (o Object) Introspect(ctx context.Context, opts ...CallOption) (string, error) {
 	var resp string
-	if err := o.p.c.Call(ctx, req, &resp); err != nil {
+	if err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.Introspectable", "Introspect", nil, &resp, opts...); err != nil {
 		return "", err
 	}
 	return resp, nil
