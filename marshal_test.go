@@ -311,12 +311,12 @@ func TestMarshal(t *testing.T) {
 			0x66, 0x6f, 0x6f, // "foo"
 			0x00, // terminator
 		}},
-		{dbus.MustSignatureFor[struct{ A, B uint32 }](), be, []byte{
+		{mustSignatureFor[struct{ A, B uint32 }](), be, []byte{
 			0x04,
 			0x28, 0x75, 0x75, 0x29,
 			0x00,
 		}},
-		{dbus.MustSignatureFor[struct{ A, B uint32 }](), le, []byte{
+		{mustSignatureFor[struct{ A, B uint32 }](), le, []byte{
 			0x04,
 			0x28, 0x75, 0x75, 0x29,
 			0x00,

@@ -55,14 +55,14 @@ func TestMarshalVariant(t *testing.T) {
 		},
 
 		{
-			dbus.MustParseSignature("uu"),
+			mustParseSignature("uu"),
 			[]byte{
 				// Signature string "g"
 				0x01, 0x67, 0x00,
 				// val
 				0x02, 0x75, 0x75, 0x00,
 			},
-			dbus.Variant{dbus.MustParseSignature("uu")},
+			dbus.Variant{mustParseSignature("uu")},
 		},
 
 		{

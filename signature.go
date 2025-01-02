@@ -105,16 +105,6 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 	}
 }
 
-// MustParseSignature is like [ParseSignature], but panics if the
-// input is not a valid type signature.
-func MustParseSignature(sig string) Signature {
-	ret, err := ParseSignature(sig)
-	if err != nil {
-		panic(fmt.Sprintf("MustParseSignature(%q): %v", sig, err))
-	}
-	return ret
-}
-
 // String returns the string encoding of the Signature, as described
 // in the DBus specification.
 func (s Signature) String() string {
@@ -289,16 +279,6 @@ func SignatureFor[T any]() (Signature, error) {
 	return ret.sig, nil
 }
 
-// MustSignatureFor is like SignatureFor, but panics if the type has
-// no Signature instead of returning an error.
-func MustSignatureFor[T any]() Signature {
-	ret, err := SignatureFor[T]()
-	if err != nil {
-		panic(fmt.Sprintf("MustSignatureFor[%s]() failed: %v", reflect.TypeFor[T](), err))
-	}
-	return ret
-}
-
 // SignatureOf returns the Signature for the given value.
 func SignatureOf(v any) (Signature, error) {
 	ret := signatures.GetRecover(reflect.TypeOf(v))
@@ -306,14 +286,6 @@ func SignatureOf(v any) (Signature, error) {
 		return Signature{}, ret.err
 	}
 	return ret.sig, nil
-}
-
-func MustSignatureOf(v any) Signature {
-	ret, err := SignatureOf(v)
-	if err != nil {
-		panic(fmt.Sprintf("MustSignatureOf(%s) failed: %v", v, err))
-	}
-	return ret
 }
 
 func sigErr(t reflect.Type, reason string) Signature {

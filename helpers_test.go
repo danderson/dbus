@@ -122,7 +122,7 @@ func (s SelfMarshalerVal) UnmarshalDBus(st *fragments.Decoder) error {
 func (s SelfMarshalerVal) AlignDBus() int { return 3 }
 
 func (s SelfMarshalerVal) SignatureDBus() dbus.Signature {
-	return dbus.MustSignatureFor[uint16]()
+	return mustSignatureFor[uint16]()
 }
 
 // SelfMarshalerPtr is a struct that implements dbus.Marshaler and
@@ -153,7 +153,7 @@ func (s *SelfMarshalerPtr) UnmarshalDBus(st *fragments.Decoder) error {
 func (s *SelfMarshalerPtr) AlignDBus() int { return 3 }
 
 func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature {
-	return dbus.MustSignatureFor[uint16]()
+	return mustSignatureFor[uint16]()
 }
 
 // VarDict is a struct that marshals to a DBus dict of string to
@@ -186,4 +186,20 @@ func mustMarshal(v any) []byte {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+func mustParseSignature(s string) dbus.Signature {
+	sig, err := dbus.ParseSignature(s)
+	if err != nil {
+		panic(err)
+	}
+	return sig
+}
+
+func mustSignatureFor[T any]() dbus.Signature {
+	sig, err := dbus.SignatureFor[T]()
+	if err != nil {
+		panic(err)
+	}
+	return sig
 }
