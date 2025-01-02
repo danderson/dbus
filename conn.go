@@ -46,6 +46,10 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 		t:     t,
 		calls: map[uint32]*pendingCall{},
 	}
+	ret.bus = ret.
+		Peer("org.freedesktop.DBus").
+		Object("/org/freedesktop/DBus").
+		Interface("org.freedesktop.DBus")
 
 	go ret.readLoop()
 
@@ -68,6 +72,8 @@ type Conn struct {
 	t        transport.Transport
 	clientID string
 
+	bus Interface
+
 	mu         sync.Mutex
 	calls      map[uint32]*pendingCall
 	lastSerial uint32
@@ -83,6 +89,13 @@ type pendingCall struct {
 // canceled, both outbound and inbound.
 func (c *Conn) Close() error {
 	return c.t.Close()
+}
+
+func (c *Conn) Peer(name string) Peer {
+	return Peer{
+		c:    c,
+		name: name,
+	}
 }
 
 func (c *Conn) readLoop() {
