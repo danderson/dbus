@@ -218,7 +218,7 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) error {
 	signalType := typeForSignal(hdr.Interface, hdr.Member, hdr.Signature)
 
-	sender, _ := ContextSender(ctx)
+	//sender, _ := ContextSender(ctx)
 
 	var signal any
 	if signalType != nil {
@@ -228,7 +228,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 		}
 	}
 
-	log.Printf("SIGNAL: %v %s %T %#v", sender, hdr.Member, signal, signal)
+	//log.Printf("SIGNAL: %v %s %T %#v", sender, hdr.Member, signal, signal)
 
 	return nil
 }
@@ -287,10 +287,12 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	var (
 		payload []byte
 		sig     Signature
+		files   []*os.File
 		err     error
 	)
 	if body != nil {
-		payload, err = Marshal(context.Background(), body, fragments.NativeEndian)
+		ctx := withContextPutFiles(context.Background(), &files)
+		payload, err = Marshal(ctx, body, fragments.NativeEndian)
 		if err != nil {
 			return err
 		}
@@ -311,6 +313,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		Path:        path,
 		Interface:   iface,
 		Member:      method,
+		NumFDs:      uint32(len(files)),
 	}
 	if body != nil {
 		hdr.Signature = sig
@@ -326,7 +329,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	if err != nil {
 		return err
 	}
-	if _, err := c.t.Write(bs); err != nil {
+	if _, err := c.t.WriteWithFiles(bs, files); err != nil {
 		return err // TODO: close transport?
 	}
 	if body != nil {

@@ -41,6 +41,12 @@ func main() {
 				Help:  "Ping a peer",
 				Run:   command.Adapt(runPing),
 			},
+			{
+				Name:  "whois",
+				Usage: "whois peer",
+				Help:  "Get a peer's identity",
+				Run:   command.Adapt(runWhois),
+			},
 
 			command.HelpCommand(nil),
 			command.VersionCommand(),
@@ -80,6 +86,31 @@ func runPing(env *command.Env, peer string) error {
 
 	if err := conn.Peer(peer).Ping(env.Context()); err != nil {
 		return fmt.Errorf("Pinging %s: %w", peer, err)
+	}
+
+	return nil
+}
+
+func runWhois(env *command.Env, peer string) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	creds, err := conn.PeerCredentials(env.Context(), peer)
+	if err != nil {
+		return fmt.Errorf("Getting credentials of %s: %w", peer, err)
+	}
+
+	fmt.Println("PID:", creds.UID)
+	fmt.Println("UID:", creds.UID)
+	fmt.Println("GIDs:", creds.GIDs)
+	if creds.PIDFD.File != nil {
+		fmt.Println("PIDFD:", creds.PIDFD.File.Fd())
+	}
+	if creds.SecurityLabel != nil {
+		fmt.Println("Security label:", string(creds.SecurityLabel))
 	}
 
 	return nil

@@ -1,6 +1,3 @@
-Implement FileDescriptor properly, with stashing/unstashing of file
-descriptors in encoder/decoder state.
-
 Figure out an approach to fuzz Marshal/Unmarshal.
 
 Break up Marshaler/Unmarshaler interfaces a bit more. Signature is

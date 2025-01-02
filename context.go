@@ -2,6 +2,7 @@ package dbus
 
 import (
 	"context"
+	"errors"
 	"os"
 )
 
@@ -25,27 +26,41 @@ func ContextSender(ctx context.Context) (Interface, bool) {
 type filesContextKey struct{}
 
 func withContextFiles(ctx context.Context, files []*os.File) context.Context {
-	return context.WithValue(ctx, filesContextKey{}, &files)
+	return context.WithValue(ctx, filesContextKey{}, files)
 }
 
-func ContextFile(ctx context.Context) (*os.File, bool) {
+func ContextFile(ctx context.Context, idx uint32) *os.File {
 	v := ctx.Value(filesContextKey{})
 	if v == nil {
-		return nil, false
+		return nil
+	}
+	fs, ok := v.([]*os.File)
+	if !ok {
+		return nil
+	}
+	if idx < 0 || int(idx) >= len(fs) {
+		return nil
+	}
+
+	return fs[int(idx)]
+}
+
+type writeFilesContextKey struct{}
+
+func withContextPutFiles(ctx context.Context, files *[]*os.File) context.Context {
+	return context.WithValue(ctx, writeFilesContextKey{}, files)
+}
+
+func ContextPutFile(ctx context.Context, file *os.File) (idx uint32, err error) {
+	v := ctx.Value(writeFilesContextKey{})
+	if v == nil {
+		return 0, errors.New("cannot send file descriptor: invalid context")
 	}
 	fsp, ok := v.(*[]*os.File)
 	if !ok || fsp == nil {
-		return nil, false
+		return 0, errors.New("cannot send file descriptor: invalid context")
 	}
-	fs := *fsp
-	if len(fs) == 0 {
-		return nil, false
-	}
-	ret := fs[0]
-	// Zero out the ptr so we don't hang onto the file for the
-	// duration of the context, if the caller drops it sooner.
-	fs[0], fs = nil, fs[1:]
-	*fsp = fs
 
-	return ret, true
+	*fsp = append(*fsp, file)
+	return uint32(len(*fsp) - 1), nil
 }

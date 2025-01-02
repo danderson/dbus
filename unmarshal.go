@@ -74,8 +74,8 @@ import (
 // Pointers decode as the value pointed to. Unmarshal allocates zero
 // values as needed when it encounters nil pointers.
 //
-// [Signature], [ObjectPath], and [FileDescriptor] decode the
-// corresponding DBus types.
+// [Signature], [ObjectPath], and [File] decode the corresponding DBus
+// types.
 //
 // [Variant] values decode DBus variants. The type of the variant's
 // inner value is determined by the type signature carried in the

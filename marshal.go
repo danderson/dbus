@@ -59,8 +59,8 @@ import (
 // Pointer values encode as the value pointed to. A nil pointer
 // encodes as the zero value of the type pointed to.
 //
-// [Signature], [ObjectPath], and [FileDescriptor] values encode to
-// the corresponding DBus types.
+// [Signature], [ObjectPath], and [File] values encode to the
+// corresponding DBus types.
 //
 // [Variant] values encode as DBus variants. The Variant's inner value
 // must be a valid value according to these rules, or Marshal will

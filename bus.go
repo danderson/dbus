@@ -75,11 +75,11 @@ func (c *Conn) PeerPID(ctx context.Context, name string, opts ...CallOption) (ui
 }
 
 type PeerCredentials struct {
-	UID           uint32          `dbus:"key=UnixUserID"`
-	GIDs          []uint32        `dbus:"key=UnixGroupIDs"`
-	PIDFD         *FileDescriptor `dbus:"key=ProcessFD"`
-	PID           uint32          `dbus:"key=ProcessID"`
-	SecurityLabel string          `dbus:"key=LinuxSecurityLabel"`
+	UID           uint32   `dbus:"key=UnixUserID"`
+	GIDs          []uint32 `dbus:"key=UnixGroupIDs"`
+	PIDFD         File     `dbus:"key=ProcessFD"`
+	PID           uint32   `dbus:"key=ProcessID"`
+	SecurityLabel []byte   `dbus:"key=LinuxSecurityLabel"`
 
 	Unknown map[string]Variant `dbus:"vardict"`
 }

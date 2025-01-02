@@ -86,6 +86,10 @@ func (u *unixTransport) Close() error {
 }
 
 func (u *unixTransport) WriteWithFiles(bs []byte, fs []*os.File) (int, error) {
+	if len(fs) == 0 {
+		return u.Write(bs)
+	}
+
 	fds := make([]int, len(fs))
 	for _, f := range fs {
 		fds = append(fds, int(f.Fd()))
