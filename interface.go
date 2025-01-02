@@ -55,8 +55,8 @@ func (f Interface) GetAllProperties(ctx context.Context, opts ...CallOption) (ma
 	return ret, nil
 }
 
-func GetProperty[T any](ctx context.Context, iface Interface, name string) (T, error) {
-	v, err := iface.GetProperty(ctx, name)
+func GetProperty[T any](ctx context.Context, iface Interface, name string, opts ...CallOption) (T, error) {
+	v, err := iface.GetProperty(ctx, name, opts...)
 	if err != nil {
 		var zero T
 		return zero, err
@@ -70,9 +70,9 @@ func GetProperty[T any](ctx context.Context, iface Interface, name string) (T, e
 	return ret, nil
 }
 
-func Call[Resp any, Req any](ctx context.Context, iface Interface, name string, body Req) (Resp, error) {
+func Call[Resp any, Req any](ctx context.Context, iface Interface, name string, body Req, opts ...CallOption) (Resp, error) {
 	var resp Resp
-	if err := iface.Call(ctx, name, body, &resp); err != nil {
+	if err := iface.Call(ctx, name, body, &resp, opts...); err != nil {
 		var zero Resp
 		return zero, err
 	}

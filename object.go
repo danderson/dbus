@@ -25,8 +25,8 @@ func (o Object) Introspect(ctx context.Context, opts ...CallOption) (string, err
 	return resp, nil
 }
 
-func (o Object) Interfaces(ctx context.Context) ([]Interface, error) {
-	names, err := GetProperty[[]string](ctx, o.Interface("org.freedesktop.DBus"), "Interfaces")
+func (o Object) Interfaces(ctx context.Context, opts ...CallOption) ([]Interface, error) {
+	names, err := GetProperty[[]string](ctx, o.Interface("org.freedesktop.DBus"), "Interfaces", opts...)
 	if err != nil {
 		return nil, err
 	}

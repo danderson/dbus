@@ -14,11 +14,11 @@ const (
 	NameRequestNoQueue
 )
 
-func (c *Conn) RequestName(ctx context.Context, name string, flags NameRequestFlags) (isPrimaryOwner bool, err error) {
+func (c *Conn) RequestName(ctx context.Context, name string, flags NameRequestFlags, opts ...CallOption) (isPrimaryOwner bool, err error) {
 	resp, err := Call[uint32](ctx, c.bus, "RequestName", struct {
 		Name  string
 		Flags uint32
-	}{name, uint32(flags)})
+	}{name, uint32(flags)}, opts...)
 	if err != nil {
 		return false, err
 	}
@@ -41,37 +41,37 @@ func (c *Conn) RequestName(ctx context.Context, name string, flags NameRequestFl
 	}
 }
 
-func (c *Conn) ReleaseName(ctx context.Context, name string) error {
-	_, err := Call[uint32](ctx, c.bus, "ReleaseName", name)
+func (c *Conn) ReleaseName(ctx context.Context, name string, opts ...CallOption) error {
+	_, err := Call[uint32](ctx, c.bus, "ReleaseName", name, opts...)
 	return err
 }
 
-func (c *Conn) QueuedOwners(ctx context.Context, name string) ([]string, error) {
-	return Call[[]string](ctx, c.bus, "ListQueuedOwners", name)
+func (c *Conn) QueuedOwners(ctx context.Context, name string, opts ...CallOption) ([]string, error) {
+	return Call[[]string](ctx, c.bus, "ListQueuedOwners", name, opts...)
 }
 
-func (c *Conn) Peers(ctx context.Context) ([]string, error) {
-	return Call[[]string, any](ctx, c.bus, "ListNames", nil)
+func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]string, error) {
+	return Call[[]string, any](ctx, c.bus, "ListNames", nil, opts...)
 }
 
-func (c *Conn) ActivatableNames(ctx context.Context) ([]string, error) {
-	return Call[[]string, any](ctx, c.bus, "ListActivatableNames", nil)
+func (c *Conn) ActivatableNames(ctx context.Context, opts ...CallOption) ([]string, error) {
+	return Call[[]string, any](ctx, c.bus, "ListActivatableNames", nil, opts...)
 }
 
-func (c *Conn) NameHasOwner(ctx context.Context, name string) (bool, error) {
-	return Call[bool](ctx, c.bus, "NameHasOwner", name)
+func (c *Conn) NameHasOwner(ctx context.Context, name string, opts ...CallOption) (bool, error) {
+	return Call[bool](ctx, c.bus, "NameHasOwner", name, opts...)
 }
 
-func (c *Conn) NameOwner(ctx context.Context, name string) (string, error) {
-	return Call[string](ctx, c.bus, "GetNameOwner", name)
+func (c *Conn) NameOwner(ctx context.Context, name string, opts ...CallOption) (string, error) {
+	return Call[string](ctx, c.bus, "GetNameOwner", name, opts...)
 }
 
-func (c *Conn) PeerUID(ctx context.Context, name string) (uint32, error) {
-	return Call[uint32](ctx, c.bus, "GetConnectionUnixUser", name)
+func (c *Conn) PeerUID(ctx context.Context, name string, opts ...CallOption) (uint32, error) {
+	return Call[uint32](ctx, c.bus, "GetConnectionUnixUser", name, opts...)
 }
 
-func (c *Conn) PeerPID(ctx context.Context, name string) (uint32, error) {
-	return Call[uint32](ctx, c.bus, "GetConnectionUnixProcessID", name)
+func (c *Conn) PeerPID(ctx context.Context, name string, opts ...CallOption) (uint32, error) {
+	return Call[uint32](ctx, c.bus, "GetConnectionUnixProcessID", name, opts...)
 }
 
 type PeerCredentials struct {
@@ -84,16 +84,16 @@ type PeerCredentials struct {
 	Unknown map[string]Variant `dbus:"vardict"`
 }
 
-func (c *Conn) PeerCredentials(ctx context.Context, name string) (*PeerCredentials, error) {
-	return Call[*PeerCredentials](ctx, c.bus, "GetConnectionCredentials", name)
+func (c *Conn) PeerCredentials(ctx context.Context, name string, opts ...CallOption) (*PeerCredentials, error) {
+	return Call[*PeerCredentials](ctx, c.bus, "GetConnectionCredentials", name, opts...)
 }
 
-func (c *Conn) BusID(ctx context.Context) (string, error) {
-	return Call[string, any](ctx, c.bus, "GetId", nil)
+func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
+	return Call[string, any](ctx, c.bus, "GetId", nil, opts...)
 }
 
-func (c *Conn) Features(ctx context.Context) ([]string, error) {
-	return GetProperty[[]string](ctx, c.bus, "Features")
+func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, error) {
+	return GetProperty[[]string](ctx, c.bus, "Features", opts...)
 }
 
 // Not implemented:
