@@ -15,6 +15,13 @@ func (f Interface) Peer() Peer     { return f.o.Peer() }
 func (f Interface) Object() Object { return f.o }
 func (f Interface) Name() string   { return f.name }
 
+func (f Interface) String() string {
+	if f.name == "" {
+		return fmt.Sprintf("%s:<no interface>", f.Object())
+	}
+	return fmt.Sprintf("%s:%s", f.Object(), f.name)
+}
+
 func (f Interface) Call(ctx context.Context, method string, body any, response any, opts ...CallOption) error {
 	return f.Conn().call(ctx, f.Peer().name, f.Object().path, f.name, method, body, response, opts...)
 }

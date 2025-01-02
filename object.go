@@ -2,6 +2,7 @@ package dbus
 
 import (
 	"context"
+	"fmt"
 	"maps"
 )
 
@@ -10,8 +11,16 @@ type Object struct {
 	path ObjectPath
 }
 
-func (o Object) Conn() *Conn { return o.p.Conn() }
-func (o Object) Peer() Peer  { return o.p }
+func (o Object) Conn() *Conn      { return o.p.Conn() }
+func (o Object) Peer() Peer       { return o.p }
+func (o Object) Path() ObjectPath { return o.path }
+
+func (o Object) String() string {
+	if o.path == "" {
+		return fmt.Sprintf("%s:<no object>", o.Peer())
+	}
+	return fmt.Sprintf("%s:%s", o.Peer(), o.path)
+}
 
 func (o Object) Interface(name string) Interface {
 	return Interface{
