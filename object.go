@@ -2,6 +2,7 @@ package dbus
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"maps"
 )
@@ -29,12 +30,17 @@ func (o Object) Interface(name string) Interface {
 	}
 }
 
-func (o Object) Introspect(ctx context.Context, opts ...CallOption) (string, error) {
+func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*Description, error) {
 	var resp string
 	if err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.Introspectable", "Introspect", nil, &resp, opts...); err != nil {
-		return "", err
+		return nil, err
 	}
-	return resp, nil
+	fmt.Println(resp)
+	var ret Description
+	if err := xml.Unmarshal([]byte(resp), &ret); err != nil {
+		return nil, err
+	}
+	return &ret, nil
 }
 
 func (o Object) Interfaces(ctx context.Context, opts ...CallOption) ([]Interface, error) {

@@ -13,6 +13,7 @@ import (
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
 	"github.com/danderson/dbus"
+	"github.com/kr/pretty"
 )
 
 var globalArgs struct {
@@ -62,6 +63,12 @@ func main() {
 				Usage: "features",
 				Help:  "List the message bus's feature flags",
 				Run:   command.Adapt(runFeatures),
+			},
+			{
+				Name:  "introspect",
+				Usage: "introspect peer object-path",
+				Help:  "Dump the API description for an object",
+				Run:   command.Adapt(runIntrospect),
 			},
 
 			command.HelpCommand(nil),
@@ -177,5 +184,21 @@ func runFeatures(env *command.Env) error {
 	for _, f := range features {
 		fmt.Println(f)
 	}
+	return nil
+}
+
+func runIntrospect(env *command.Env, peer, path string) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	desc, err := conn.Peer(peer).Object(dbus.ObjectPath(path)).Introspect(env.Context())
+	if err != nil {
+		return fmt.Errorf("Pinging %s: %w", peer, err)
+	}
+	pretty.Print(desc)
+
 	return nil
 }
