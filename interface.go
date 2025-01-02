@@ -19,7 +19,7 @@ func (f Interface) Call(ctx context.Context, method string, body any, response a
 	return f.Conn().call(ctx, f.Peer().name, f.Object().path, f.name, method, body, response, opts...)
 }
 
-func (f Interface) GetProp(ctx context.Context, name string, opts ...CallOption) (any, error) {
+func (f Interface) GetProperty(ctx context.Context, name string, opts ...CallOption) (any, error) {
 	var resp Variant
 	req := struct {
 		InterfaceName string
@@ -32,7 +32,7 @@ func (f Interface) GetProp(ctx context.Context, name string, opts ...CallOption)
 	return resp.Value, nil
 }
 
-func (f Interface) SetProp(ctx context.Context, name string, value any, opts ...CallOption) error {
+func (f Interface) SetProperty(ctx context.Context, name string, value any, opts ...CallOption) error {
 	req := struct {
 		InterfaceName string
 		PropertyName  string
@@ -41,7 +41,7 @@ func (f Interface) SetProp(ctx context.Context, name string, value any, opts ...
 	return f.Object().Interface("org.freedesktop.DBus.Properties").Call(ctx, "Set", req, nil, opts...)
 }
 
-func (f Interface) GetAll(ctx context.Context, opts ...CallOption) (map[string]any, error) {
+func (f Interface) GetAllProperties(ctx context.Context, opts ...CallOption) (map[string]any, error) {
 	var resp map[string]Variant
 	err := f.Object().Interface("org.freedesktop.DBus.Properties").Call(ctx, "GetAll", f.name, &resp, opts...)
 	if err != nil {
@@ -56,7 +56,7 @@ func (f Interface) GetAll(ctx context.Context, opts ...CallOption) (map[string]a
 }
 
 func GetProperty[T any](ctx context.Context, iface Interface, name string) (T, error) {
-	v, err := iface.GetProp(ctx, name)
+	v, err := iface.GetProperty(ctx, name)
 	if err != nil {
 		var zero T
 		return zero, err

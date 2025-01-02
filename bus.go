@@ -46,15 +46,15 @@ func (c *Conn) ReleaseName(ctx context.Context, name string) error {
 	return err
 }
 
-func (c *Conn) ListQueuedOwners(ctx context.Context, name string) ([]string, error) {
+func (c *Conn) QueuedOwners(ctx context.Context, name string) ([]string, error) {
 	return Call[[]string](ctx, c.bus, "ListQueuedOwners", name)
 }
 
-func (c *Conn) ListNames(ctx context.Context) ([]string, error) {
+func (c *Conn) Peers(ctx context.Context) ([]string, error) {
 	return Call[[]string, any](ctx, c.bus, "ListNames", nil)
 }
 
-func (c *Conn) ListActivatableNames(ctx context.Context) ([]string, error) {
+func (c *Conn) ActivatableNames(ctx context.Context) ([]string, error) {
 	return Call[[]string, any](ctx, c.bus, "ListActivatableNames", nil)
 }
 
@@ -62,15 +62,15 @@ func (c *Conn) NameHasOwner(ctx context.Context, name string) (bool, error) {
 	return Call[bool](ctx, c.bus, "NameHasOwner", name)
 }
 
-func (c *Conn) GetNameOwner(ctx context.Context, name string) (string, error) {
+func (c *Conn) NameOwner(ctx context.Context, name string) (string, error) {
 	return Call[string](ctx, c.bus, "GetNameOwner", name)
 }
 
-func (c *Conn) GetPeerUID(ctx context.Context, name string) (uint32, error) {
+func (c *Conn) PeerUID(ctx context.Context, name string) (uint32, error) {
 	return Call[uint32](ctx, c.bus, "GetConnectionUnixUser", name)
 }
 
-func (c *Conn) GetPeerPID(ctx context.Context, name string) (uint32, error) {
+func (c *Conn) PeerPID(ctx context.Context, name string) (uint32, error) {
 	return Call[uint32](ctx, c.bus, "GetConnectionUnixProcessID", name)
 }
 
@@ -79,17 +79,16 @@ type PeerCredentials struct {
 	GIDs          []uint32        `dbus:"key=UnixGroupIDs"`
 	PIDFD         *FileDescriptor `dbus:"key=ProcessFD"`
 	PID           uint32          `dbus:"key=ProcessID"`
-	SID           string          `dbus:"key=WindowsSID"`
 	SecurityLabel string          `dbus:"key=LinuxSecurityLabel"`
 
 	Unknown map[string]Variant `dbus:"vardict"`
 }
 
-func (c *Conn) GetPeerCredentials(ctx context.Context, name string) (*PeerCredentials, error) {
+func (c *Conn) PeerCredentials(ctx context.Context, name string) (*PeerCredentials, error) {
 	return Call[*PeerCredentials](ctx, c.bus, "GetConnectionCredentials", name)
 }
 
-func (c *Conn) GetBusID(ctx context.Context) (string, error) {
+func (c *Conn) BusID(ctx context.Context) (string, error) {
 	return Call[string, any](ctx, c.bus, "GetId", nil)
 }
 

@@ -58,7 +58,7 @@ func runList(env *command.Env) error {
 	}
 	defer conn.Close()
 
-	names, err := conn.ListNames(env.Context())
+	names, err := conn.Peers(env.Context())
 	if err != nil {
 		return fmt.Errorf("listing bus names: %w", err)
 	}
