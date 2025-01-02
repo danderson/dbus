@@ -304,6 +304,13 @@ type Request struct {
 	// Method is the method to call on the interface.
 	Method string
 
+	// Body is the request body. The body's type signature must match
+	// the method being invoked. If the method accepts multiple
+	// parameters, Body must be a struct whose fields are the method
+	// parameters. Body can be nil for methods that take no input
+	// parameters.
+	Body any
+
 	// OneWay informs the peer that the call is one-way, with no
 	// response desired. The [Conn.Call] will complete as soon as the
 	// request has been sent, and there is no way to tell whether the
@@ -320,11 +327,4 @@ type Request struct {
 	// services as a result of this request. Requests to a peer that
 	// would require on-demand starting will return an error.
 	NoAutoStart bool
-
-	// Body is the request body. The body's type signature must match
-	// the method being invoked. If the method accepts multiple
-	// parameters, Body must be a struct whose fields are the method
-	// parameters. Body can be nil for methods that take no input
-	// parameters.
-	Body any
 }
