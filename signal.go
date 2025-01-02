@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"io"
 	"maps"
 
@@ -26,13 +27,13 @@ type PropertiesChanged struct {
 	Invalidated mapset.Set[string]
 }
 
-func sigPropertiesChanged(iface Interface, payload io.Reader) (any, error) {
+func sigPropertiesChanged(ctx context.Context, iface Interface, payload io.Reader) (any, error) {
 	var body struct {
 		Interface   string
 		Changed     map[string]Variant
 		Invalidated []string
 	}
-	if err := Unmarshal(payload, fragments.NativeEndian, &body); err != nil {
+	if err := Unmarshal(ctx, payload, fragments.NativeEndian, &body); err != nil {
 		return nil, err
 	}
 
@@ -49,12 +50,12 @@ type InterfacesAdded struct {
 	Interfaces []Interface
 }
 
-func sigInterfacesAdded(iface Interface, r io.Reader) (any, error) {
+func sigInterfacesAdded(ctx context.Context, iface Interface, r io.Reader) (any, error) {
 	var body struct {
 		Path        ObjectPath
 		IfsAndProps map[string]map[string]Variant
 	}
-	if err := Unmarshal(r, fragments.NativeEndian, &body); err != nil {
+	if err := Unmarshal(ctx, r, fragments.NativeEndian, &body); err != nil {
 		return nil, err
 	}
 	ret := InterfacesAdded{
@@ -73,12 +74,12 @@ type InterfacesRemoved struct {
 	Interfaces []Interface
 }
 
-func sigInterfacesRemoved(iface Interface, r io.Reader) (any, error) {
+func sigInterfacesRemoved(ctx context.Context, iface Interface, r io.Reader) (any, error) {
 	var body struct {
 		Path ObjectPath
 		Ifs  []string
 	}
-	if err := Unmarshal(r, fragments.NativeEndian, &body); err != nil {
+	if err := Unmarshal(ctx, r, fragments.NativeEndian, &body); err != nil {
 		return nil, err
 	}
 	ret := InterfacesRemoved{
@@ -98,11 +99,11 @@ type NameOwnerChanged struct {
 	New  *Peer
 }
 
-func sigNameOwnerChanged(iface Interface, r io.Reader) (any, error) {
+func sigNameOwnerChanged(ctx context.Context, iface Interface, r io.Reader) (any, error) {
 	var body struct {
 		Name, Prev, New string
 	}
-	if err := Unmarshal(r, fragments.NativeEndian, &body); err != nil {
+	if err := Unmarshal(ctx, r, fragments.NativeEndian, &body); err != nil {
 		return nil, err
 	}
 	ret := NameOwnerChanged{
@@ -123,9 +124,9 @@ type NameLost struct {
 	Name string
 }
 
-func sigNameLost(_ Interface, r io.Reader) (any, error) {
+func sigNameLost(ctx context.Context, _ Interface, r io.Reader) (any, error) {
 	var ret NameLost
-	if err := Unmarshal(r, fragments.NativeEndian, &ret); err != nil {
+	if err := Unmarshal(ctx, r, fragments.NativeEndian, &ret); err != nil {
 		return nil, err
 	}
 	return ret, nil
@@ -135,9 +136,9 @@ type NameAcquired struct {
 	Name string
 }
 
-func sigNameAcquired(_ Interface, r io.Reader) (any, error) {
+func sigNameAcquired(ctx context.Context, _ Interface, r io.Reader) (any, error) {
 	var ret NameAcquired
-	if err := Unmarshal(r, fragments.NativeEndian, &ret); err != nil {
+	if err := Unmarshal(ctx, r, fragments.NativeEndian, &ret); err != nil {
 		return nil, err
 	}
 	return ret, nil
@@ -145,6 +146,6 @@ func sigNameAcquired(_ Interface, r io.Reader) (any, error) {
 
 type ActivatableServicesChanged struct{}
 
-func sigActivatableServicesChanged(Interface, io.Reader) (any, error) {
+func sigActivatableServicesChanged(context.Context, Interface, io.Reader) (any, error) {
 	return ActivatableServicesChanged{}, nil
 }

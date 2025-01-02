@@ -2,6 +2,7 @@ package dbus_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	"github.com/danderson/dbus"
@@ -9,7 +10,7 @@ import (
 )
 
 func mustMarshal(a any) []byte {
-	bs, err := dbus.Marshal(a, fragments.BigEndian)
+	bs, err := dbus.Marshal(context.Background(), a, fragments.BigEndian)
 	if err != nil {
 		panic(err)
 	}

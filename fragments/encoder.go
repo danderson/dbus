@@ -1,12 +1,13 @@
 package fragments
 
 import (
+	"context"
 	"errors"
 	"reflect"
 )
 
 // An EncoderFunc writes a value to the given encoder.
-type EncoderFunc func(enc *Encoder, val reflect.Value) error
+type EncoderFunc func(ctx context.Context, enc *Encoder, val reflect.Value) error
 
 // An Encoder provides utilities to write a DBus wire format message
 // to a byte slice.
@@ -83,12 +84,12 @@ func (e *Encoder) Uint64(u64 uint64) {
 
 // Value writes v to the output, using the [EncoderFunc] provided by
 // [Encoder.Mapper].
-func (e *Encoder) Value(v any) error {
+func (e *Encoder) Value(ctx context.Context, v any) error {
 	if e.Mapper == nil {
 		return errors.New("Mapper not provided to Encoder")
 	}
 	fn := e.Mapper(reflect.TypeOf(v))
-	return fn(e, reflect.ValueOf(v))
+	return fn(ctx, e, reflect.ValueOf(v))
 }
 
 // Array writes an array to the output.

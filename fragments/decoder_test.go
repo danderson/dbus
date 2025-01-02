@@ -2,6 +2,7 @@ package fragments_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -108,7 +109,7 @@ func (d *mustDecoder) MustUint64(want uint64) {
 
 func (d *mustDecoder) MustValue(want any) {
 	got := reflect.New(reflect.TypeOf(want).Elem()).Interface()
-	if err := d.Value(got); err != nil {
+	if err := d.Value(context.Background(), got); err != nil {
 		d.t.Fatalf("Value() got err: %v", err)
 	}
 	if diff := cmp.Diff(got, want); diff != "" {
@@ -331,7 +332,7 @@ func TestDecoder(t *testing.T) {
 			},
 			func(d *mustDecoder) {
 				d.Mapper = func(t reflect.Type) fragments.DecoderFunc {
-					return func(d *fragments.Decoder, v reflect.Value) error {
+					return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 						want := v.Type().String()
 						gotBs, err := d.Read(len(want))
 						if err != nil {

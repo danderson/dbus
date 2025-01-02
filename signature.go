@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"iter"
@@ -150,7 +151,7 @@ func stringForType(t reflect.Type) string {
 	}
 }
 
-func (s Signature) MarshalDBus(e *fragments.Encoder) error {
+func (s Signature) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
 	str := s.String()
 	if len(str) > 255 {
 		return fmt.Errorf("signature exceeds maximum length of 255 bytes")
@@ -161,7 +162,7 @@ func (s Signature) MarshalDBus(e *fragments.Encoder) error {
 	return nil
 }
 
-func (s *Signature) UnmarshalDBus(st *fragments.Decoder) error {
+func (s *Signature) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
 	u8, err := st.Uint8()
 	if err != nil {
 		return err

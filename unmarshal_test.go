@@ -2,6 +2,7 @@ package dbus_test
 
 import (
 	"bytes"
+	"context"
 	"reflect"
 	"testing"
 
@@ -306,7 +307,7 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 	}
 
 	b := bytes.NewBuffer(in)
-	err := dbus.Unmarshal(b, fragments.BigEndian, got)
+	err := dbus.Unmarshal(context.Background(), b, fragments.BigEndian, got)
 	if err != nil {
 		if !wantErr {
 			t.Errorf("Unmarshal(..., %T) got err: %v", want, err)
@@ -325,7 +326,7 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 }
 
 func testRoundTrip(t *testing.T, val any) {
-	bs, err := dbus.Marshal(val, fragments.BigEndian)
+	bs, err := dbus.Marshal(context.Background(), val, fragments.BigEndian)
 	if err != nil {
 		t.Errorf("re-Marshal(%T) got err: %v", val, err)
 	}

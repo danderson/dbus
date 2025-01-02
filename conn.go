@@ -112,7 +112,7 @@ func (c *Conn) readLoop() {
 
 func (c *Conn) dispatchMsg() error {
 	var hdr header
-	if err := Unmarshal(c.t, fragments.NativeEndian, &hdr); err != nil {
+	if err := Unmarshal(context.Background(), c.t, fragments.NativeEndian, &hdr); err != nil {
 		return err
 	}
 	bodyReader := io.LimitReader(c.t, int64(hdr.Length))
@@ -157,7 +157,7 @@ func (c *Conn) dispatchReturn(hdr *header, body io.Reader, _ []*os.File) error {
 	}
 
 	if pending.resp != nil {
-		if err := Unmarshal(body, hdr.Order.Order(), pending.resp); err != nil {
+		if err := Unmarshal(context.Background(), body, hdr.Order.Order(), pending.resp); err != nil {
 			return err
 		}
 	}
@@ -221,13 +221,13 @@ func (c *Conn) dispatchSignal(hdr *header, body io.Reader) error {
 	var signal any
 	var err error
 	if signalFn != nil {
-		signal, err = signalFn(iface, body)
+		signal, err = signalFn(context.Background(), iface, body)
 		if err != nil {
 			return err
 		}
 	} else if !hdr.Signature.IsZero() {
 		v := hdr.Signature.Value()
-		if err := Unmarshal(body, hdr.Order.Order(), v.Interface()); err != nil {
+		if err := Unmarshal(context.Background(), body, hdr.Order.Order(), v.Interface()); err != nil {
 			return err
 		}
 		signal = v.Elem().Interface()
@@ -295,7 +295,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		err     error
 	)
 	if body != nil {
-		payload, err = Marshal(body, fragments.NativeEndian)
+		payload, err = Marshal(context.Background(), body, fragments.NativeEndian)
 		if err != nil {
 			return err
 		}
@@ -327,7 +327,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		return err
 	}
 
-	bs, err := Marshal(&hdr, fragments.NativeEndian)
+	bs, err := Marshal(context.Background(), &hdr, fragments.NativeEndian)
 	if err != nil {
 		return err
 	}
@@ -348,7 +348,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	}
 }
 
-type SignalTypeFunc func(iface Interface, payload io.Reader) (signalObj any, err error)
+type SignalTypeFunc func(ctx context.Context, iface Interface, payload io.Reader) (signalObj any, err error)
 
 func (c *Conn) RegisterSignalTypeFunc(interfaceName string, signalName string, fn SignalTypeFunc) {
 	name := interfaceName + "." + signalName

@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"reflect"
@@ -71,14 +72,14 @@ import (
 //
 // DBus cannot represent cyclic or recursive types. Attempting to
 // encode such values causes Marshal to return a [TypeError].
-func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
+func Marshal(ctx context.Context, v any, ord fragments.ByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
 	enc := encoders.GetRecover(val.Type())
 	st := fragments.Encoder{
 		Order:  ord,
 		Mapper: encoders.GetRecover,
 	}
-	if err := enc(&st, val); err != nil {
+	if err := enc(ctx, &st, val); err != nil {
 		return nil, err
 	}
 	return st.Out, nil
@@ -95,7 +96,7 @@ func Marshal(v any, ord fragments.ByteOrder) ([]byte, error) {
 type Marshaler interface {
 	SignatureDBus() Signature
 	AlignDBus() int
-	MarshalDBus(st *fragments.Encoder) error
+	MarshalDBus(ctx context.Context, st *fragments.Encoder) error
 }
 
 var marshalerType = reflect.TypeFor[Marshaler]()
@@ -165,7 +166,7 @@ func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 // EncoderFunc constructor.
 func newErrEncoder(t reflect.Type, reason string) fragments.EncoderFunc {
 	err := typeErr(t, reason)
-	encoders.Unwind(func(*fragments.Encoder, reflect.Value) error {
+	encoders.Unwind(func(context.Context, *fragments.Encoder, reflect.Value) error {
 		return err
 	})
 	// So that callers can return the result of this constructor and
@@ -179,43 +180,43 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 	ptr := newMarshalEncoder()
 	if t.Implements(marshalerType) {
 		val := newMarshalEncoder()
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			if v.CanAddr() {
-				return ptr(st, v.Addr())
+				return ptr(ctx, st, v.Addr())
 			} else {
-				return val(st, v)
+				return val(ctx, st, v)
 			}
 		}
 	} else {
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			if !v.CanAddr() {
 				return typeErr(t, "Marshaler is only implemented on pointer receiver, and cannot take the address of given value")
 			}
-			return ptr(st, v.Addr())
+			return ptr(ctx, st, v.Addr())
 		}
 	}
 }
 
 func newMarshalEncoder() fragments.EncoderFunc {
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		m := v.Interface().(Marshaler)
 		st.Pad(m.AlignDBus())
-		return m.MarshalDBus(st)
+		return m.MarshalDBus(ctx, st)
 	}
 }
 
 func newPtrEncoder(t reflect.Type) fragments.EncoderFunc {
 	elemEnc := encoders.Get(t.Elem())
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		if v.IsNil() {
-			return elemEnc(st, reflect.Zero(t))
+			return elemEnc(ctx, st, reflect.Zero(t))
 		}
-		return elemEnc(st, v.Elem())
+		return elemEnc(ctx, st, v.Elem())
 	}
 }
 
 func newBoolEncoder() fragments.EncoderFunc {
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		val := uint32(0)
 		if v.Bool() {
 			val = 1
@@ -228,17 +229,17 @@ func newBoolEncoder() fragments.EncoderFunc {
 func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
 	case 2:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint16(uint16(v.Int()))
 			return nil
 		}
 	case 4:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint32(uint32(v.Int()))
 			return nil
 		}
 	case 8:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint64(uint64(v.Int()))
 			return nil
 		}
@@ -250,22 +251,22 @@ func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
 	case 1:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint8(uint8(v.Uint()))
 			return nil
 		}
 	case 2:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint16(uint16(v.Uint()))
 			return nil
 		}
 	case 4:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint32(uint32(v.Uint()))
 			return nil
 		}
 	case 8:
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Uint64(v.Uint())
 			return nil
 		}
@@ -275,14 +276,14 @@ func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 }
 
 func newFloatEncoder() fragments.EncoderFunc {
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		st.Uint64(math.Float64bits(v.Float()))
 		return nil
 	}
 }
 
 func newStringEncoder() fragments.EncoderFunc {
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		st.String(v.String())
 		return nil
 	}
@@ -291,7 +292,7 @@ func newStringEncoder() fragments.EncoderFunc {
 func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 	if t.Elem().Kind() == reflect.Uint8 {
 		// Fast path for []byte
-		return func(st *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 			st.Bytes(v.Bytes())
 			return nil
 		}
@@ -307,10 +308,10 @@ func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 		isStruct = t.Elem().Kind() == reflect.Struct
 	}
 
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		return st.Array(isStruct, func() error {
 			for i := 0; i < v.Len(); i++ {
-				if err := elemEnc(st, v.Index(i)); err != nil {
+				if err := elemEnc(ctx, st, v.Index(i)); err != nil {
 					return err
 				}
 			}
@@ -333,10 +334,10 @@ func newStructEncoder(t reflect.Type) fragments.EncoderFunc {
 		frags = append(frags, newStructFieldEncoder(f))
 	}
 
-	return func(e *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		e.Struct(func() error {
 			for _, frag := range frags {
-				if err := frag(e, v); err != nil {
+				if err := frag(ctx, e, v); err != nil {
 					return err
 				}
 			}
@@ -353,9 +354,9 @@ func newStructFieldEncoder(f *structField) fragments.EncoderFunc {
 		return newVarDictFieldEncoder(f)
 	} else {
 		fEnc := encoders.Get(f.Type)
-		return func(e *fragments.Encoder, v reflect.Value) error {
+		return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 			fv := f.GetWithZero(v)
-			return fEnc(e, fv)
+			return fEnc(ctx, e, fv)
 		}
 	}
 }
@@ -374,7 +375,7 @@ func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
 		varDictFields = append(varDictFields, f.VarDictField(k))
 	}
 
-	return func(e *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		return e.Array(true, func() error {
 			for _, f := range varDictFields {
 				fv := f.GetWithZero(v)
@@ -383,10 +384,10 @@ func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
 				}
 
 				err := e.Struct(func() error {
-					if err := kEnc(e, f.Key); err != nil {
+					if err := kEnc(ctx, e, f.Key); err != nil {
 						return err
 					}
-					if err := vEnc(e, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
+					if err := vEnc(ctx, e, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
 						return err
 					}
 					return nil
@@ -402,10 +403,10 @@ func newVarDictFieldEncoder(f *structField) fragments.EncoderFunc {
 			for _, mapKey := range ks {
 				mapVal := other.MapIndex(mapKey)
 				err := e.Struct(func() error {
-					if err := kEnc(e, mapKey); err != nil {
+					if err := kEnc(ctx, e, mapKey); err != nil {
 						return err
 					}
-					if err := vEnc(e, mapVal); err != nil {
+					if err := vEnc(ctx, e, mapVal); err != nil {
 						return err
 					}
 					return nil
@@ -430,17 +431,17 @@ func newMapEncoder(t reflect.Type) fragments.EncoderFunc {
 	vEnc := encoders.Get(vt)
 	kCmp := mapKeyCmp(kt)
 
-	return func(st *fragments.Encoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		ks := v.MapKeys()
 		slices.SortFunc(ks, kCmp)
 		return st.Array(true, func() error {
 			for _, mk := range ks {
 				mv := v.MapIndex(mk)
 				err := st.Struct(func() error {
-					if err := kEnc(st, mk); err != nil {
+					if err := kEnc(ctx, st, mk); err != nil {
 						return err
 					}
-					if err := vEnc(st, mv); err != nil {
+					if err := vEnc(ctx, st, mv); err != nil {
 						return err
 					}
 					return nil

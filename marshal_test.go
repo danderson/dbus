@@ -2,6 +2,7 @@ package dbus_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/danderson/dbus"
@@ -546,7 +547,7 @@ func TestMarshal(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got, err := dbus.Marshal(tc.in, tc.enc)
+		got, err := dbus.Marshal(context.Background(), tc.in, tc.enc)
 		if err != nil {
 			if len(tc.want) != 0 {
 				t.Errorf("Marshal(%T) got err: %v", tc.in, err)

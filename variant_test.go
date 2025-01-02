@@ -2,6 +2,7 @@ package dbus_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/danderson/dbus"
@@ -99,7 +100,7 @@ func TestMarshalVariant(t *testing.T) {
 
 	for _, tc := range tests {
 		v := dbus.Variant{tc.in}
-		got, err := dbus.Marshal(v, fragments.BigEndian)
+		got, err := dbus.Marshal(context.Background(), v, fragments.BigEndian)
 		if err != nil {
 			if len(tc.want) != 0 {
 				t.Errorf("Marshal(dbus.Variant{%T}) got err: %v", tc.in, err)
@@ -120,7 +121,7 @@ func TestMarshalVariant(t *testing.T) {
 			continue
 		}
 		var gotU dbus.Variant
-		err = dbus.Unmarshal(bytes.NewBuffer(got), fragments.BigEndian, &gotU)
+		err = dbus.Unmarshal(context.Background(), bytes.NewBuffer(got), fragments.BigEndian, &gotU)
 		if err != nil {
 			t.Errorf("Unmarshal(Marshal(dbus.Variant{%T})) got err: %v", tc.in, err)
 		}

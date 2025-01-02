@@ -2,6 +2,7 @@ package fragments_test
 
 import (
 	"bytes"
+	"context"
 	"reflect"
 	"testing"
 
@@ -225,13 +226,13 @@ func TestEncoder(t *testing.T) {
 			"mapper",
 			func(e *fragments.Encoder) {
 				e.Mapper = func(t reflect.Type) fragments.EncoderFunc {
-					return func(e *fragments.Encoder, v reflect.Value) error {
+					return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 						e.Write([]byte(v.Type().String()))
 						return nil
 					}
 				}
-				e.Value("foo")
-				e.Value(uint16(42))
+				e.Value(context.Background(), "foo")
+				e.Value(context.Background(), uint16(42))
 			},
 			[]byte{
 				0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, // "string"

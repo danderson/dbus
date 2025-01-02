@@ -1,6 +1,7 @@
 package fragments
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,7 +9,7 @@ import (
 )
 
 // A DecoderFunc reads a value into val.
-type DecoderFunc func(dec *Decoder, val reflect.Value) error
+type DecoderFunc func(ctx context.Context, dec *Decoder, val reflect.Value) error
 
 // A Decoder provides utilities to read a DBus wire format message to
 // a byte slice.
@@ -126,7 +127,7 @@ func (d *Decoder) Uint64() (uint64, error) {
 
 // Value reads a value into v, using the [DecoderFunc] provided by
 // [Decoder.Mapper]. v must be a non-nil pointer.
-func (d *Decoder) Value(v any) error {
+func (d *Decoder) Value(ctx context.Context, v any) error {
 	if d.Mapper == nil {
 		return errors.New("Mapper not provided to Decoder")
 	}
@@ -138,7 +139,7 @@ func (d *Decoder) Value(v any) error {
 		return fmt.Errorf("outval of Decoder.Value must not be a nil pointer")
 	}
 	fn := d.Mapper(rv.Type().Elem())
-	return fn(d, rv.Elem())
+	return fn(ctx, d, rv.Elem())
 }
 
 // Array reads an array.

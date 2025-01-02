@@ -2,6 +2,7 @@ package dbus_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	"github.com/danderson/dbus"
@@ -59,7 +60,7 @@ var sampleWireMessage = []byte{
 }
 
 func mustUnmarshal(bs []byte, v any) {
-	err := dbus.Unmarshal(bytes.NewReader(bs), fragments.BigEndian, v)
+	err := dbus.Unmarshal(context.Background(), bytes.NewReader(bs), fragments.BigEndian, v)
 	if err != nil {
 		panic(err)
 	}

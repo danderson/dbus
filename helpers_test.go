@@ -1,6 +1,7 @@
 package dbus_test
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/danderson/dbus"
@@ -100,13 +101,13 @@ type SelfMarshalerVal struct {
 	B byte
 }
 
-func (s SelfMarshalerVal) MarshalDBus(st *fragments.Encoder) error {
+func (s SelfMarshalerVal) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
 	st.Pad(3)
 	st.Write([]byte{0, s.B + 1})
 	return nil
 }
 
-func (s SelfMarshalerVal) UnmarshalDBus(st *fragments.Decoder) error {
+func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
 	st.Pad(3)
 	bs, err := st.Read(2)
 	if err != nil {
@@ -131,13 +132,13 @@ type SelfMarshalerPtr struct {
 	B byte
 }
 
-func (s *SelfMarshalerPtr) MarshalDBus(st *fragments.Encoder) error {
+func (s *SelfMarshalerPtr) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
 	st.Pad(3)
 	st.Write([]byte{0, s.B + 1})
 	return nil
 }
 
-func (s *SelfMarshalerPtr) UnmarshalDBus(st *fragments.Decoder) error {
+func (s *SelfMarshalerPtr) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
 	st.Pad(3)
 	bs, err := st.Read(2)
 	if err != nil {

@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/danderson/dbus/fragments"
@@ -8,14 +9,14 @@ import (
 
 type ObjectPath string
 
-func (p ObjectPath) MarshalDBus(st *fragments.Encoder) error {
-	st.Value(string(p))
+func (p ObjectPath) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
+	st.Value(ctx, string(p))
 	return nil
 }
 
-func (p *ObjectPath) UnmarshalDBus(st *fragments.Decoder) error {
+func (p *ObjectPath) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
 	var s string
-	if err := st.Value(&s); err != nil {
+	if err := st.Value(ctx, &s); err != nil {
 		return err
 	}
 	*p = ObjectPath(s)

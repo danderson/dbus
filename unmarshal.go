@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -90,7 +91,7 @@ import (
 // DBus cannot represent cyclic or recursive types. Attempting to
 // decode into such values causes Unmarshal to return a
 // [TypeError].
-func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
+func Unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v any) error {
 	if v == nil {
 		return fmt.Errorf("can't unmarshal into nil interface")
 	}
@@ -107,7 +108,7 @@ func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 		Mapper: decoders.GetRecover,
 		In:     data,
 	}
-	return dec(&st, val.Elem())
+	return dec(ctx, &st, val.Elem())
 }
 
 // Unmarshaler is the interface implemented by types that can
@@ -125,13 +126,13 @@ func Unmarshal(data io.Reader, ord fragments.ByteOrder, v any) error {
 type Unmarshaler interface {
 	SignatureDBus() Signature
 	AlignDBus() int
-	UnmarshalDBus(st *fragments.Decoder) error
+	UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error
 }
 
 var unmarshalerType = reflect.TypeFor[Unmarshaler]()
 
 type unmarshalerOnly interface {
-	UnmarshalDBus(st *fragments.Decoder) error
+	UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error
 }
 
 var unmarshalerOnlyType = reflect.TypeFor[unmarshalerOnly]()
@@ -218,7 +219,7 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 // DecoderFunc constructor.
 func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
 	err := typeErr(t, reason)
-	decoders.Unwind(func(*fragments.Decoder, reflect.Value) error {
+	decoders.Unwind(func(context.Context, *fragments.Decoder, reflect.Value) error {
 		return err
 	})
 	// So that callers can return the result of this constructor and
@@ -230,37 +231,37 @@ func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
 
 func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 	ptr := newMarshalDecoder(reflect.PointerTo(t))
-	return func(st *fragments.Decoder, v reflect.Value) error {
-		return ptr(st, v.Addr())
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+		return ptr(ctx, st, v.Addr())
 	}
 }
 
 func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			elem := reflect.New(t.Elem())
 			v.Set(elem)
 		}
 		m := v.Interface().(Unmarshaler)
 		st.Pad(m.AlignDBus())
-		return m.UnmarshalDBus(st)
+		return m.UnmarshalDBus(ctx, st)
 	}
 }
 
 func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 	elem := t.Elem()
 	elemDec := decoders.Get(elem)
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			if !v.CanSet() {
 				panic("got an unsettable nil pointer, should be impossible!")
 			}
 			elem := reflect.New(elem)
-			if err := elemDec(st, elem.Elem()); err != nil {
+			if err := elemDec(ctx, st, elem.Elem()); err != nil {
 				return err
 			}
 			v.Set(elem)
-		} else if err := elemDec(st, v.Elem()); err != nil {
+		} else if err := elemDec(ctx, st, v.Elem()); err != nil {
 			return err
 		}
 		return nil
@@ -268,7 +269,7 @@ func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newBoolDecoder() fragments.DecoderFunc {
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		u, err := st.Uint32()
 		if err != nil {
 			return err
@@ -281,7 +282,7 @@ func newBoolDecoder() fragments.DecoderFunc {
 func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u8, err := st.Uint8()
 			if err != nil {
 				return err
@@ -290,7 +291,7 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 2:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u16, err := st.Uint16()
 			if err != nil {
 				return err
@@ -299,7 +300,7 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 4:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u32, err := st.Uint32()
 			if err != nil {
 				return err
@@ -308,7 +309,7 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 8:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u64, err := st.Uint64()
 			if err != nil {
 				return err
@@ -324,7 +325,7 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u8, err := st.Uint8()
 			if err != nil {
 				return err
@@ -333,7 +334,7 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 2:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u16, err := st.Uint16()
 			if err != nil {
 				return err
@@ -342,7 +343,7 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 4:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u32, err := st.Uint32()
 			if err != nil {
 				return err
@@ -351,7 +352,7 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 8:
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			u64, err := st.Uint64()
 			if err != nil {
 				return err
@@ -365,7 +366,7 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newFloatDecoder() fragments.DecoderFunc {
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		u64, err := st.Uint64()
 		if err != nil {
 			return err
@@ -376,7 +377,7 @@ func newFloatDecoder() fragments.DecoderFunc {
 }
 
 func newStringDecoder() fragments.DecoderFunc {
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		s, err := st.String()
 		if err != nil {
 			return err
@@ -388,7 +389,7 @@ func newStringDecoder() fragments.DecoderFunc {
 
 func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	if t.Elem().Kind() == reflect.Uint8 {
-		return func(st *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			bs, err := st.Bytes()
 			if err != nil {
 				return err
@@ -408,13 +409,13 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 		isStruct = t.Elem().Kind() == reflect.Struct
 	}
 
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		v.Set(v.Slice(0, 0))
 
 		_, err := st.Array(isStruct, func(i int) error {
 			v.Grow(1)
 			v.Set(v.Slice(0, i+1))
-			if err := elemDec(st, v.Index(i)); err != nil {
+			if err := elemDec(ctx, st, v.Index(i)); err != nil {
 				return err
 			}
 			return nil
@@ -441,10 +442,10 @@ func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 		frags = append(frags, newStructFieldDecoder(f))
 	}
 
-	return func(d *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		return d.Struct(func() error {
 			for _, frag := range frags {
-				if err := frag(d, v); err != nil {
+				if err := frag(ctx, d, v); err != nil {
 					return err
 				}
 			}
@@ -460,9 +461,9 @@ func newStructFieldDecoder(f *structField) fragments.DecoderFunc {
 		return newVarDictFieldDecoder(f)
 	} else {
 		fDec := decoders.Get(f.Type)
-		return func(d *fragments.Decoder, v reflect.Value) error {
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 			fv := f.GetWithAlloc(v)
-			return fDec(d, fv)
+			return fDec(ctx, d, fv)
 		}
 	}
 }
@@ -479,7 +480,7 @@ func newVarDictFieldDecoder(f *structField) fragments.DecoderFunc {
 		fields[vf.StrKey] = vf
 	}
 
-	return func(d *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		unknown := f.GetWithAlloc(v)
 		unknownInit := false
 
@@ -491,10 +492,10 @@ func newVarDictFieldDecoder(f *structField) fragments.DecoderFunc {
 			val.Elem().SetZero()
 
 			err := d.Struct(func() error {
-				if err := kDec(d, key.Elem()); err != nil {
+				if err := kDec(ctx, d, key.Elem()); err != nil {
 					return err
 				}
-				if err := vDec(d, val.Elem()); err != nil {
+				if err := vDec(ctx, d, val.Elem()); err != nil {
 					return err
 				}
 				return nil
@@ -539,7 +540,7 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 	vt := t.Elem()
 	vDec := decoders.Get(vt)
 
-	return func(st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			v.Set(reflect.MakeMap(t))
 		} else {
@@ -553,10 +554,10 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 			key.Elem().SetZero()
 			val.Elem().SetZero()
 			err := st.Struct(func() error {
-				if err := kDec(st, key.Elem()); err != nil {
+				if err := kDec(ctx, st, key.Elem()); err != nil {
 					return err
 				}
-				if err := vDec(st, val.Elem()); err != nil {
+				if err := vDec(ctx, st, val.Elem()); err != nil {
 					return err
 				}
 				return nil

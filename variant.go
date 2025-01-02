@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -13,23 +14,23 @@ type Variant struct {
 
 var variantType = reflect.TypeFor[Variant]()
 
-func (v Variant) MarshalDBus(st *fragments.Encoder) error {
+func (v Variant) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
 	sig, err := SignatureOf(v.Value)
 	if err != nil {
 		return err
 	}
-	if err := st.Value(sig); err != nil {
+	if err := st.Value(ctx, sig); err != nil {
 		return err
 	}
-	if err := st.Value(v.Value); err != nil {
+	if err := st.Value(ctx, v.Value); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (v *Variant) UnmarshalDBus(d *fragments.Decoder) error {
+func (v *Variant) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
 	var sig Signature
-	if err := d.Value(&sig); err != nil {
+	if err := d.Value(ctx, &sig); err != nil {
 		return fmt.Errorf("reading Variant signature: %w", err)
 	}
 	innerValue := sig.Value()
@@ -37,7 +38,7 @@ func (v *Variant) UnmarshalDBus(d *fragments.Decoder) error {
 		return fmt.Errorf("unsupported Variant type signature %q", sig)
 	}
 	inner := innerValue.Interface()
-	if err := d.Value(inner); err != nil {
+	if err := d.Value(ctx, inner); err != nil {
 		return fmt.Errorf("reading Variant value (signature %q): %w", sig, err)
 	}
 	v.Value = innerValue.Elem().Interface()

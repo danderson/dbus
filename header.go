@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -15,11 +16,11 @@ var byteOrderSignature = mkSignature(reflect.TypeFor[uint8]())
 
 func (*byteOrder) SignatureDBus() Signature { return byteOrderSignature }
 
-func (*byteOrder) MarshalDBus(e *fragments.Encoder) error {
+func (*byteOrder) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
 	e.ByteOrderFlag()
 	return nil
 }
-func (b *byteOrder) UnmarshalDBus(d *fragments.Decoder) error {
+func (b *byteOrder) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
 	d.ByteOrderFlag()
 	*b = d.Order == fragments.BigEndian
 	return nil
@@ -47,8 +48,8 @@ type structAlign struct{}
 func (*structAlign) AlignDBus() int           { return 8 }
 func (*structAlign) SignatureDBus() Signature { return Signature{} }
 
-func (*structAlign) MarshalDBus(*fragments.Encoder) error   { return nil }
-func (*structAlign) UnmarshalDBus(*fragments.Decoder) error { return nil }
+func (*structAlign) MarshalDBus(context.Context, *fragments.Encoder) error   { return nil }
+func (*structAlign) UnmarshalDBus(context.Context, *fragments.Decoder) error { return nil }
 
 // header is a DBus message header, minus the initial byte order
 // indicator byte.
