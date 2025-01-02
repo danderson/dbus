@@ -3,8 +3,10 @@ package dbus_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/fragments"
 )
 
 // UnmarshalWithoutVardict is a translation of a (hypothetical) DBus
@@ -27,21 +29,36 @@ type UnmarshalWithVardict struct {
 	UnknownExtensions map[uint8]dbus.Variant `dbus:"vardict"`
 }
 
-func ExampleUnmarshal_vardict() {
-	a := UnmarshalWithoutVardict{
+func sampleWireMessage() io.Reader {
+	v := UnmarshalWithoutVardict{
 		Name: "Weather station",
 		Extensions: map[uint8]dbus.Variant{
 			1: {string("Helsinki")},
 			2: {float64(-4.2)},
 		},
 	}
+	bs, err := dbus.Marshal(v, fragments.BigEndian)
+	if err != nil {
+		panic(err)
+	}
+	return bytes.NewReader(bs)
+}
 
-	b := UnmarshalWithVardict{
-		Name:        "Weather station",
-		Location:    "Helsinki",
-		Temperature: -4.2,
+func ExampleUnmarshal_vardict() {
+	var s UnmarshalWithVardict
+
+	err := dbus.Unmarshal(sampleWireMessage(), fragments.BigEndian, &s)
+	if err != nil {
+		panic(err)
 	}
 
-	fmt.Println(bytes.Equal(mustMarshal(a), mustMarshal(b)))
-	// Output: true
+	fmt.Println("Name:", s.Name)
+	fmt.Println("Location:", s.Location)
+	fmt.Println("Temperature:", s.Temperature)
+	fmt.Println("Unknown extensions:", len(s.UnknownExtensions))
+	// Output:
+	// Name: Weather station
+	// Location: Helsinki
+	// Temperature: -4.2
+	// Unknown extensions: 0
 }

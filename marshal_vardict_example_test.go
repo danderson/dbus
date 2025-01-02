@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/fragments"
 )
 
 // MarshalNoVardict is a translation of a (hypothetical) DBus message
@@ -27,6 +28,18 @@ type MarshalWithVardict struct {
 	UnknownExtensions map[uint8]dbus.Variant `dbus:"vardict"`
 }
 
+func marshalsTheSame(a, b any) bool {
+	ab, err := dbus.Marshal(a, fragments.BigEndian)
+	if err != nil {
+		panic(err)
+	}
+	bb, err := dbus.Marshal(b, fragments.BigEndian)
+	if err != nil {
+		panic(err)
+	}
+	return bytes.Equal(ab, bb)
+}
+
 func ExampleMarshal_vardict() {
 	a := MarshalNoVardict{
 		Name: "Weather station",
@@ -42,6 +55,6 @@ func ExampleMarshal_vardict() {
 		Temperature: -4.2,
 	}
 
-	fmt.Println(bytes.Equal(mustMarshal(a), mustMarshal(b)))
+	fmt.Println(marshalsTheSame(a, b))
 	// Output: true
 }
