@@ -43,15 +43,13 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 		return nil, err
 	}
 	ret := &Conn{
-		t:           t,
-		calls:       map[uint32]*pendingCall{},
-		signalFuncs: map[string]SignalTypeFunc{},
+		t:     t,
+		calls: map[uint32]*pendingCall{},
 	}
 	ret.bus = ret.
 		Peer("org.freedesktop.DBus").
 		Object("/org/freedesktop/DBus").
 		Interface("org.freedesktop.DBus")
-	ret.registerStandardSignals()
 
 	go ret.readLoop()
 
@@ -73,8 +71,6 @@ type Conn struct {
 	mu         sync.Mutex
 	calls      map[uint32]*pendingCall
 	lastSerial uint32
-
-	signalFuncs map[string]SignalTypeFunc
 }
 
 type pendingCall struct {
@@ -220,31 +216,19 @@ func (c *Conn) dispatchErr(ctx context.Context, hdr *header, body io.Reader) err
 }
 
 func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) error {
-	signalFn := func() SignalTypeFunc {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		ret := c.signalFuncs[hdr.Interface+"."+hdr.Member]
-		delete(c.calls, hdr.ReplySerial)
-		return ret
-	}()
-	iface := c.Peer(hdr.Sender).Object(hdr.Path).Interface(hdr.Interface)
+	signalType := typeForSignal(hdr.Interface, hdr.Member, hdr.Signature)
+
+	sender, _ := ContextSender(ctx)
 
 	var signal any
-	var err error
-	if signalFn != nil {
-		signal, err = signalFn(ctx, iface, body)
-		if err != nil {
+	if signalType != nil {
+		signal = reflect.New(signalType).Interface()
+		if err := Unmarshal(ctx, body, hdr.Order.Order(), signal); err != nil {
 			return err
 		}
-	} else if !hdr.Signature.IsZero() {
-		v := hdr.Signature.Value()
-		if err := Unmarshal(ctx, body, hdr.Order.Order(), v.Interface()); err != nil {
-			return err
-		}
-		signal = v.Elem().Interface()
 	}
 
-	log.Printf("SIGNAL: %v %s %#v", iface, hdr.Member, signal)
+	log.Printf("SIGNAL: %v %s %T %#v", sender, hdr.Member, signal, signal)
 
 	return nil
 }
@@ -357,16 +341,4 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-type SignalTypeFunc func(ctx context.Context, iface Interface, payload io.Reader) (signalObj any, err error)
-
-func (c *Conn) RegisterSignalTypeFunc(interfaceName string, signalName string, fn SignalTypeFunc) {
-	name := interfaceName + "." + signalName
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if prev := c.signalFuncs[name]; prev != nil {
-		panic(fmt.Errorf("duplicate registration of SignalTypeFunc for %s", name))
-	}
-	c.signalFuncs[name] = fn
 }

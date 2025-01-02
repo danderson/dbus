@@ -38,6 +38,14 @@ func ParseSignature(sig string) (Signature, error) {
 	return ret, nil
 }
 
+func mustParseSignature(sig string) Signature {
+	ret, err := ParseSignature(sig)
+	if err != nil {
+		panic(err)
+	}
+	return ret
+}
+
 // parseOne consumes the first complete type from the front of sig,
 // and returns the corresponding reflect.Type as well as the remainder
 // of the type string.
