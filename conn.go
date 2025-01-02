@@ -139,7 +139,7 @@ func (c *Conn) dispatchMsg() error {
 	case msgTypeReturn:
 		return c.dispatchReturn(ctx, &hdr, bodyReader, fs)
 	case msgTypeError:
-		return c.dispatchErr(ctx, &hdr, bodyReader)
+		return c.dispatchErr(&hdr, bodyReader)
 	case msgTypeSignal:
 		return c.dispatchSignal(ctx, &hdr, bodyReader)
 	}
@@ -172,7 +172,7 @@ func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, 
 	return nil
 }
 
-func (c *Conn) dispatchErr(ctx context.Context, hdr *header, body io.Reader) error {
+func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
