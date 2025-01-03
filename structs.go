@@ -130,6 +130,10 @@ func (s *structInfo) String() string {
 }
 
 func getStructInfo(t reflect.Type) (*structInfo, error) {
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("%s is not a struct", t)
+	}
+
 	ret := &structInfo{
 		Name: t.String(),
 		Type: t,
