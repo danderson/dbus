@@ -51,3 +51,15 @@ func (p Peer) UID(ctx context.Context, opts ...CallOption) (uint32, error) {
 func (p Peer) PID(ctx context.Context, opts ...CallOption) (uint32, error) {
 	return Call[uint32](ctx, p.Conn().bus, "GetConnectionUnixProcessID", p.Name(), opts...)
 }
+
+func (p Peer) Exists(ctx context.Context, opts ...CallOption) (bool, error) {
+	return Call[bool](ctx, p.Conn().bus, "NameHasOwner", p.name, opts...)
+}
+
+func (p Peer) Owner(ctx context.Context, opts ...CallOption) (Peer, error) {
+	name, err := Call[string](ctx, p.Conn().bus, "GetNameOwner", p.name, opts...)
+	if err != nil {
+		return Peer{}, err
+	}
+	return p.Conn().Peer(name), nil
+}
