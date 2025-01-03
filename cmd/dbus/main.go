@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 
@@ -111,6 +112,9 @@ func runWhois(env *command.Env, peer string) error {
 	}
 	if creds.SecurityLabel != nil {
 		fmt.Println("Security label:", string(creds.SecurityLabel))
+	}
+	for _, k := range slices.Sorted(maps.Keys(creds.Unknown)) {
+		fmt.Println(k, "(?):", creds.Unknown[k])
 	}
 
 	return nil
