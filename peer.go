@@ -63,3 +63,15 @@ func (p Peer) Owner(ctx context.Context, opts ...CallOption) (Peer, error) {
 	}
 	return p.Conn().Peer(name), nil
 }
+
+func (p Peer) QueuedOwners(ctx context.Context, opts ...CallOption) ([]Peer, error) {
+	names, err := Call[[]string](ctx, p.Conn().bus, "ListQueuedOwners", p.name, opts...)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]Peer, len(names))
+	for i, n := range names {
+		ret[i] = p.Conn().Peer(n)
+	}
+	return ret, nil
+}

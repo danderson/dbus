@@ -46,10 +46,6 @@ func (c *Conn) ReleaseName(ctx context.Context, name string, opts ...CallOption)
 	return err
 }
 
-func (c *Conn) QueuedOwners(ctx context.Context, name string, opts ...CallOption) ([]string, error) {
-	return Call[[]string](ctx, c.bus, "ListQueuedOwners", name, opts...)
-}
-
 func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
 	names, err := Call[[]string, any](ctx, c.bus, "ListNames", nil, opts...)
 	if err != nil {
