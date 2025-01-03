@@ -39,9 +39,9 @@ func TestSignatureOf(t *testing.T) {
 		{dbus.Variant{int16(0)}, "v"},
 		{VarDict{}, "(a{sv})"},
 		{VarDictByte{}, "(a{yv})"},
+		{struct{}{}, "()"},
 
 		{},
-		{struct{}{}, ""},
 		{Tree{}, ""},
 		{map[Simple]bool{}, ""},
 		{map[[2]int64]bool{}, ""},

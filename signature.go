@@ -370,9 +370,6 @@ func uncachedSignatureOf(t reflect.Type) Signature {
 		if err != nil {
 			return sigErr(t, fmt.Sprintf("getting struct info: %v", err.Error()))
 		}
-		if len(fs.StructFields) == 0 {
-			return sigErr(t, "empty struct")
-		}
 		for _, f := range fs.StructFields {
 			// Descend through all fields, to look for cyclic
 			// references.
