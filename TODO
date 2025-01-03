@@ -19,3 +19,6 @@ use the latter for some reason.
 implement peer identity stuff in terms of GetCredentials and the pidfd
 under the hood, when pidfd passing is available, rather than just
 expose the random bag of deprecated and unsafe APIs DBus offers.
+
+maybe allow unmarshaling a property into a *any, so people can get
+properties of unknown type and then reflect on the output.
