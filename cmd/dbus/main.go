@@ -99,7 +99,7 @@ func runWhois(env *command.Env, peer string) error {
 	}
 	defer conn.Close()
 
-	creds, err := conn.PeerCredentials(env.Context(), peer)
+	creds, err := conn.Peer(peer).Identity(env.Context())
 	if err != nil {
 		return fmt.Errorf("Getting credentials of %s: %w", peer, err)
 	}

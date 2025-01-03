@@ -29,3 +29,17 @@ func (p Peer) Object(path ObjectPath) Object {
 		path: path,
 	}
 }
+
+type PeerIdentity struct {
+	UID           uint32   `dbus:"key=UnixUserID"`
+	GIDs          []uint32 `dbus:"key=UnixGroupIDs"`
+	PIDFD         File     `dbus:"key=ProcessFD"`
+	PID           uint32   `dbus:"key=ProcessID"`
+	SecurityLabel []byte   `dbus:"key=LinuxSecurityLabel"`
+
+	Unknown map[string]Variant `dbus:"vardict"`
+}
+
+func (p Peer) Identity(ctx context.Context, opts ...CallOption) (PeerIdentity, error) {
+	return Call[PeerIdentity](ctx, p.Conn().bus, "GetConnectionCredentials", p.Name(), opts...)
+}

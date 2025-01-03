@@ -74,20 +74,6 @@ func (c *Conn) PeerPID(ctx context.Context, name string, opts ...CallOption) (ui
 	return Call[uint32](ctx, c.bus, "GetConnectionUnixProcessID", name, opts...)
 }
 
-type PeerCredentials struct {
-	UID           uint32   `dbus:"key=UnixUserID"`
-	GIDs          []uint32 `dbus:"key=UnixGroupIDs"`
-	PIDFD         File     `dbus:"key=ProcessFD"`
-	PID           uint32   `dbus:"key=ProcessID"`
-	SecurityLabel []byte   `dbus:"key=LinuxSecurityLabel"`
-
-	Unknown map[string]Variant `dbus:"vardict"`
-}
-
-func (c *Conn) PeerCredentials(ctx context.Context, name string, opts ...CallOption) (*PeerCredentials, error) {
-	return Call[*PeerCredentials](ctx, c.bus, "GetConnectionCredentials", name, opts...)
-}
-
 func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
 	return Call[string, any](ctx, c.bus, "GetId", nil, opts...)
 }

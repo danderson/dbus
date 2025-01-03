@@ -44,8 +44,8 @@ func TestContextFile(t *testing.T) {
 	ctx := withContextFiles(context.Background(), fs)
 
 	for i := range 2 {
-		got, ok := ContextFile(ctx)
-		if !ok {
+		got := ContextFile(ctx, uint32(i))
+		if got == nil {
 			t.Fatal("file not found in context")
 		}
 		if got != want[i] {
@@ -53,8 +53,8 @@ func TestContextFile(t *testing.T) {
 		}
 	}
 
-	got, ok := ContextFile(ctx)
-	if ok {
+	got := ContextFile(ctx, 2)
+	if got != nil {
 		t.Fatalf("got unexpected file %p after popping all files from %v", got, want)
 	}
 }
