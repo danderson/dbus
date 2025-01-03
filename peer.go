@@ -43,3 +43,11 @@ type PeerIdentity struct {
 func (p Peer) Identity(ctx context.Context, opts ...CallOption) (PeerIdentity, error) {
 	return Call[PeerIdentity](ctx, p.Conn().bus, "GetConnectionCredentials", p.Name(), opts...)
 }
+
+func (p Peer) UID(ctx context.Context, opts ...CallOption) (uint32, error) {
+	return Call[uint32](ctx, p.Conn().bus, "GetConnectionUnixUser", p.Name(), opts...)
+}
+
+func (p Peer) PID(ctx context.Context, opts ...CallOption) (uint32, error) {
+	return Call[uint32](ctx, p.Conn().bus, "GetConnectionUnixProcessID", p.Name(), opts...)
+}

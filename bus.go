@@ -50,28 +50,40 @@ func (c *Conn) QueuedOwners(ctx context.Context, name string, opts ...CallOption
 	return Call[[]string](ctx, c.bus, "ListQueuedOwners", name, opts...)
 }
 
-func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]string, error) {
-	return Call[[]string, any](ctx, c.bus, "ListNames", nil, opts...)
+func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
+	names, err := Call[[]string, any](ctx, c.bus, "ListNames", nil, opts...)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]Peer, len(names))
+	for i, n := range names {
+		ret[i] = c.Peer(n)
+	}
+	return ret, nil
 }
 
-func (c *Conn) ActivatableNames(ctx context.Context, opts ...CallOption) ([]string, error) {
-	return Call[[]string, any](ctx, c.bus, "ListActivatableNames", nil, opts...)
+func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
+	names, err := Call[[]string, any](ctx, c.bus, "ListActivatableNames", nil, opts...)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]Peer, len(names))
+	for i, n := range names {
+		ret[i] = c.Peer(n)
+	}
+	return ret, nil
 }
 
 func (c *Conn) NameHasOwner(ctx context.Context, name string, opts ...CallOption) (bool, error) {
 	return Call[bool](ctx, c.bus, "NameHasOwner", name, opts...)
 }
 
-func (c *Conn) NameOwner(ctx context.Context, name string, opts ...CallOption) (string, error) {
-	return Call[string](ctx, c.bus, "GetNameOwner", name, opts...)
-}
-
-func (c *Conn) PeerUID(ctx context.Context, name string, opts ...CallOption) (uint32, error) {
-	return Call[uint32](ctx, c.bus, "GetConnectionUnixUser", name, opts...)
-}
-
-func (c *Conn) PeerPID(ctx context.Context, name string, opts ...CallOption) (uint32, error) {
-	return Call[uint32](ctx, c.bus, "GetConnectionUnixProcessID", name, opts...)
+func (c *Conn) NameOwner(ctx context.Context, name string, opts ...CallOption) (Peer, error) {
+	name, err := Call[string](ctx, c.bus, "GetNameOwner", name, opts...)
+	if err != nil {
+		return Peer{}, err
+	}
+	return c.Peer(name), nil
 }
 
 func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {

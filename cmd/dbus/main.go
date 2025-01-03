@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -70,7 +71,9 @@ func runList(env *command.Env) error {
 		return fmt.Errorf("listing bus names: %w", err)
 	}
 
-	slices.Sort(names)
+	slices.SortFunc(names, func(a, b dbus.Peer) int {
+		return cmp.Compare(a.Name(), b.Name())
+	})
 	for _, n := range names {
 		fmt.Println(n)
 	}
