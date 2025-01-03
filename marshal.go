@@ -104,15 +104,6 @@ var marshalerType = reflect.TypeFor[Marshaler]()
 
 var encoders cache[fragments.EncoderFunc]
 
-func init() {
-	// This needs to be an init func to break the initialization cycle
-	// between the cache and the calls to the cache within
-	// uncachedTypeEncoder.
-	encoders.Init(uncachedTypeEncoder, func(t reflect.Type) fragments.EncoderFunc {
-		return newErrEncoder(t, "recursive type")
-	})
-}
-
 // uncachedTypeEncoder returns the EncoderFunc for t.
 func uncachedTypeEncoder(t reflect.Type) (ret fragments.EncoderFunc) {
 	// If a value's pointer type implements Unmarshaler, we can avoid

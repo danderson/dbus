@@ -265,20 +265,6 @@ type sigCacheEntry struct {
 
 var signatures cache[sigCacheEntry]
 
-func init() {
-	// This needs to be an init func to break the initialization cycle
-	// between the cache and the calls to the cache within
-	// uncachedSignatureOf.
-	signatures.Init(
-		func(t reflect.Type) sigCacheEntry {
-			return sigCacheEntry{uncachedSignatureOf(t), nil}
-		},
-		func(t reflect.Type) sigCacheEntry {
-			sigErr(t, "recursive type")
-			panic("unreachable")
-		})
-}
-
 // SignatureFor returns the Signature for the given type.
 func SignatureFor[T any]() (Signature, error) {
 	ret := signatures.GetRecover(reflect.TypeFor[T]())

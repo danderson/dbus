@@ -140,15 +140,6 @@ var unmarshalerOnlyType = reflect.TypeFor[unmarshalerOnly]()
 
 var decoders cache[fragments.DecoderFunc]
 
-func init() {
-	// This needs to be an init func to break the initialization cycle
-	// between the cache and the calls to the cache within
-	// uncachedTypeEncoder.
-	decoders.Init(uncachedTypeDecoder, func(t reflect.Type) fragments.DecoderFunc {
-		return newErrDecoder(t, "recursive type")
-	})
-}
-
 // uncachedTypeDecoder returns the DecoderFunc for t.
 func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 	// We only want Unmarshalers with pointer receivers, since a value
