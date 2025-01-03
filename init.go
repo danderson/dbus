@@ -23,4 +23,13 @@ func init() {
 			sigErr(t, "recursive type")
 			panic("unreachable")
 		})
+
+	// These use the caches above, so must come after.
+	RegisterSignalType[NameOwnerChanged]("org.freedesktop.DBus", "NameOwnerChanged")
+	RegisterSignalType[NameLost]("org.freedesktop.DBus", "NameLost")
+	RegisterSignalType[NameAcquired]("org.freedesktop.DBus", "NameAcquired")
+	RegisterSignalType[ActivatableServicesChanged]("org.freedesktop.DBus", "ActivatableServicesChanged")
+	RegisterSignalType[PropertiesChanged]("org.freedesktop.DBus.Properties", "PropertiesChanged")
+	RegisterSignalType[InterfacesAdded]("org.freedesktop.DBus", "InterfacesAdded")
+	RegisterSignalType[InterfacesRemoved]("org.freedesktop.DBus", "InterfacesRemoved")
 }

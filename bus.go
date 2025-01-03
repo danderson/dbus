@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 
 	"github.com/creachadair/mds/mapset"
@@ -92,6 +93,17 @@ func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, erro
 		return nil, err
 	}
 	return features, nil
+}
+
+func (c *Conn) addMatch(ctx context.Context, m *Match) error {
+	rule := m.filterString()
+	log.Println(m, rule)
+	return c.bus.Call(ctx, "AddMatch", rule, nil)
+}
+
+func (c *Conn) removeMatch(ctx context.Context, m *Match) error {
+	rule := m.filterString()
+	return c.bus.Call(ctx, "RemoveMatch", rule, nil)
 }
 
 // Not implemented:

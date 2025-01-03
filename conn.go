@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/creachadair/mds/mapset"
 	"github.com/danderson/dbus/fragments"
 	"github.com/danderson/dbus/transport"
 )
@@ -71,6 +72,7 @@ type Conn struct {
 	mu         sync.Mutex
 	calls      map[uint32]*pendingCall
 	lastSerial uint32
+	watchers   mapset.Set[*Watcher]
 }
 
 type pendingCall struct {
@@ -80,9 +82,18 @@ type pendingCall struct {
 	err    error
 }
 
+func (c *Conn) Watch() *Watcher {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	w := newWatcher(c)
+	c.watchers.Add(w)
+	return w
+}
+
 // Close closes the DBus connection. Any in-flight requests are
 // canceled, both outbound and inbound.
 func (c *Conn) Close() error {
+	// TODO: close out watchers
 	return c.t.Close()
 }
 
@@ -216,19 +227,28 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 }
 
 func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) error {
-	signalType := typeForSignal(hdr.Interface, hdr.Member, hdr.Signature)
-
-	//sender, _ := ContextSender(ctx)
-
-	var signal any
-	if signalType != nil {
-		signal = reflect.New(signalType).Interface()
-		if err := Unmarshal(ctx, body, hdr.Order.Order(), signal); err != nil {
-			return err
-		}
+	signalType := signalNameToType[signalKey{hdr.Interface, hdr.Member}]
+	if signalType == nil {
+		signalType = hdr.Signature.Type()
 	}
 
-	//log.Printf("SIGNAL: %v %s %T %#v", sender, hdr.Member, signal, signal)
+	sender, _ := ContextSender(ctx)
+
+	var signal reflect.Value
+	if signalType != nil {
+		signal = reflect.New(signalType)
+		if err := Unmarshal(ctx, body, hdr.Order.Order(), signal.Interface()); err != nil {
+			return err
+		}
+	} else {
+		signal = reflect.ValueOf(&struct{}{})
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for w := range c.watchers {
+		w.deliver(sender, hdr, signal)
+	}
 
 	return nil
 }
