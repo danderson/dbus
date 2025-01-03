@@ -41,32 +41,48 @@ type PeerIdentity struct {
 }
 
 func (p Peer) Identity(ctx context.Context, opts ...CallOption) (PeerIdentity, error) {
-	return Call[PeerIdentity](ctx, p.Conn().bus, "GetConnectionCredentials", p.Name(), opts...)
+	var resp PeerIdentity
+	if err := p.Conn().bus.Call(ctx, "GetConnectionCredentials", p.name, &resp, opts...); err != nil {
+		return PeerIdentity{}, err
+	}
+	return resp, nil
 }
 
 func (p Peer) UID(ctx context.Context, opts ...CallOption) (uint32, error) {
-	return Call[uint32](ctx, p.Conn().bus, "GetConnectionUnixUser", p.Name(), opts...)
+	var uid uint32
+	if err := p.Conn().bus.Call(ctx, "GetConnectionUnixUser", p.name, &uid, opts...); err != nil {
+		return 0, err
+	}
+	return uid, nil
 }
 
 func (p Peer) PID(ctx context.Context, opts ...CallOption) (uint32, error) {
-	return Call[uint32](ctx, p.Conn().bus, "GetConnectionUnixProcessID", p.Name(), opts...)
+	var pid uint32
+	if err := p.Conn().bus.Call(ctx, "GetConnectionUnixProcessID", p.name, &pid, opts...); err != nil {
+		return 0, err
+	}
+	return pid, nil
 }
 
 func (p Peer) Exists(ctx context.Context, opts ...CallOption) (bool, error) {
-	return Call[bool](ctx, p.Conn().bus, "NameHasOwner", p.name, opts...)
+	var exists bool
+	if err := p.Conn().bus.Call(ctx, "NameHasOwner", p.name, &exists, opts...); err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 func (p Peer) Owner(ctx context.Context, opts ...CallOption) (Peer, error) {
-	name, err := Call[string](ctx, p.Conn().bus, "GetNameOwner", p.name, opts...)
-	if err != nil {
+	var name string
+	if err := p.Conn().bus.Call(ctx, "GetNameOwner", p.name, &name, opts...); err != nil {
 		return Peer{}, err
 	}
 	return p.Conn().Peer(name), nil
 }
 
 func (p Peer) QueuedOwners(ctx context.Context, opts ...CallOption) ([]Peer, error) {
-	names, err := Call[[]string](ctx, p.Conn().bus, "ListQueuedOwners", p.name, opts...)
-	if err != nil {
+	var names []string
+	if err := p.Conn().bus.Call(ctx, "ListQueuedOwners", p.name, &names, opts...); err != nil {
 		return nil, err
 	}
 	ret := make([]Peer, len(names))

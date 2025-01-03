@@ -38,8 +38,8 @@ func (o Object) Introspect(ctx context.Context, opts ...CallOption) (string, err
 }
 
 func (o Object) Interfaces(ctx context.Context, opts ...CallOption) ([]Interface, error) {
-	names, err := GetProperty[[]string](ctx, o.Interface("org.freedesktop.DBus"), "Interfaces", opts...)
-	if err != nil {
+	var names []string
+	if err := o.Interface("org.freedesktop.DBus").GetProperty(ctx, "Interfaces", &names, opts...); err != nil {
 		return nil, err
 	}
 	ret := make([]Interface, 0, len(names))

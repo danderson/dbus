@@ -15,11 +15,12 @@ const (
 )
 
 func (c *Conn) RequestName(ctx context.Context, name string, flags NameRequestFlags, opts ...CallOption) (isPrimaryOwner bool, err error) {
-	resp, err := Call[uint32](ctx, c.bus, "RequestName", struct {
+	var resp uint32
+	req := struct {
 		Name  string
 		Flags uint32
-	}{name, uint32(flags)}, opts...)
-	if err != nil {
+	}{name, uint32(flags)}
+	if err := c.bus.Call(ctx, "RequestName", req, &resp, opts...); err != nil {
 		return false, err
 	}
 	switch resp {
@@ -42,13 +43,16 @@ func (c *Conn) RequestName(ctx context.Context, name string, flags NameRequestFl
 }
 
 func (c *Conn) ReleaseName(ctx context.Context, name string, opts ...CallOption) error {
-	_, err := Call[uint32](ctx, c.bus, "ReleaseName", name, opts...)
-	return err
+	var ignore uint32
+	if err := c.bus.Call(ctx, "ReleaseName", name, &ignore, opts...); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
-	names, err := Call[[]string, any](ctx, c.bus, "ListNames", nil, opts...)
-	if err != nil {
+	var names []string
+	if err := c.bus.Call(ctx, "ListNames", nil, &names, opts...); err != nil {
 		return nil, err
 	}
 	ret := make([]Peer, len(names))
@@ -59,8 +63,8 @@ func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
 }
 
 func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
-	names, err := Call[[]string, any](ctx, c.bus, "ListActivatableNames", nil, opts...)
-	if err != nil {
+	var names []string
+	if err := c.bus.Call(ctx, "ListActivatableNames", nil, &names, opts...); err != nil {
 		return nil, err
 	}
 	ret := make([]Peer, len(names))
@@ -71,11 +75,19 @@ func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer
 }
 
 func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
-	return Call[string, any](ctx, c.bus, "GetId", nil, opts...)
+	var id string
+	if err := c.bus.Call(ctx, "GetId", nil, &id, opts...); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, error) {
-	return GetProperty[[]string](ctx, c.bus, "Features", opts...)
+	var features []string
+	if err := c.bus.GetProperty(ctx, "Features", &features, opts...); err != nil {
+		return nil, err
+	}
+	return features, nil
 }
 
 // Not implemented:

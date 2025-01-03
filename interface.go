@@ -2,7 +2,9 @@ package dbus
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 )
 
 type Interface struct {
@@ -26,7 +28,18 @@ func (f Interface) Call(ctx context.Context, method string, body any, response a
 	return f.Conn().call(ctx, f.Peer().name, f.Object().path, f.name, method, body, response, opts...)
 }
 
-func (f Interface) GetProperty(ctx context.Context, name string, opts ...CallOption) (any, error) {
+func (f Interface) GetProperty(ctx context.Context, name string, val any, opts ...CallOption) error {
+	want := reflect.ValueOf(val)
+	if !want.IsValid() {
+		return errors.New("cannot read property into nil interface")
+	}
+	if want.Kind() != reflect.Pointer {
+		return errors.New("cannot read property into non-pointer")
+	}
+	if want.IsNil() {
+		return errors.New("cannot read property into nil pointer")
+	}
+
 	var resp Variant
 	req := struct {
 		InterfaceName string
@@ -34,9 +47,16 @@ func (f Interface) GetProperty(ctx context.Context, name string, opts ...CallOpt
 	}{f.name, name}
 	err := f.Object().Interface("org.freedesktop.DBus.Properties").Call(ctx, "Get", req, &resp, opts...)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return resp.Value, nil
+
+	got := reflect.ValueOf(resp.Value)
+	if !got.Type().AssignableTo(want.Type()) {
+		return fmt.Errorf("property type %s is not assignable to %s", got.Type(), want.Type())
+	}
+	want.Set(got)
+
+	return nil
 }
 
 func (f Interface) SetProperty(ctx context.Context, name string, value any, opts ...CallOption) error {
@@ -60,28 +80,4 @@ func (f Interface) GetAllProperties(ctx context.Context, opts ...CallOption) (ma
 		ret[k] = v.Value
 	}
 	return ret, nil
-}
-
-func GetProperty[T any](ctx context.Context, iface Interface, name string, opts ...CallOption) (T, error) {
-	v, err := iface.GetProperty(ctx, name, opts...)
-	if err != nil {
-		var zero T
-		return zero, err
-	}
-	ret, ok := v.(T)
-	if !ok {
-		var zero T
-		return zero, fmt.Errorf("property %q has type %T, not %T", name, v, zero)
-	}
-
-	return ret, nil
-}
-
-func Call[Resp any, Req any](ctx context.Context, iface Interface, name string, body Req, opts ...CallOption) (Resp, error) {
-	var resp Resp
-	if err := iface.Call(ctx, name, body, &resp, opts...); err != nil {
-		var zero Resp
-		return zero, err
-	}
-	return resp, nil
 }
