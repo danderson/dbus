@@ -23,7 +23,7 @@ func (f *File) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
 	if f.File == nil {
 		return errors.New("cannot marshal File: File.File is nil")
 	}
-	idx, err := ContextPutFile(ctx, f.File)
+	idx, err := contextPutFile(ctx, f.File)
 	if err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (f *File) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
 	if err != nil {
 		return err
 	}
-	file := ContextFile(ctx, idx)
+	file := contextFile(ctx, idx)
 	if file == nil {
 		return errors.New("cannot unmarshal File: no file descriptor available")
 	}

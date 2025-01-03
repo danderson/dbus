@@ -29,7 +29,7 @@ func withContextFiles(ctx context.Context, files []*os.File) context.Context {
 	return context.WithValue(ctx, filesContextKey{}, files)
 }
 
-func ContextFile(ctx context.Context, idx uint32) *os.File {
+func contextFile(ctx context.Context, idx uint32) *os.File {
 	v := ctx.Value(filesContextKey{})
 	if v == nil {
 		return nil
@@ -51,7 +51,7 @@ func withContextPutFiles(ctx context.Context, files *[]*os.File) context.Context
 	return context.WithValue(ctx, writeFilesContextKey{}, files)
 }
 
-func ContextPutFile(ctx context.Context, file *os.File) (idx uint32, err error) {
+func contextPutFile(ctx context.Context, file *os.File) (idx uint32, err error) {
 	v := ctx.Value(writeFilesContextKey{})
 	if v == nil {
 		return 0, errors.New("cannot send file descriptor: invalid context")
