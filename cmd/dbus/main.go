@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/signal"
 	"slices"
+	"syscall"
 
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
@@ -49,13 +51,21 @@ func main() {
 				Help:  "Get a peer's identity",
 				Run:   command.Adapt(runWhois),
 			},
+			{
+				Name:  "listen",
+				Usage: "listen",
+				Help:  "Listen to bus signals",
+				Run:   command.Adapt(runListen),
+			},
 
 			command.HelpCommand(nil),
 			command.VersionCommand(),
 		},
 	}
 
-	env := root.NewEnv(nil).MergeFlags(true)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	env := root.NewEnv(nil).SetContext(ctx).MergeFlags(true)
 	command.RunOrFail(env, os.Args[1:])
 }
 
@@ -121,4 +131,27 @@ func runWhois(env *command.Env, peer string) error {
 	}
 
 	return nil
+}
+
+func runListen(env *command.Env) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	w := conn.Watch()
+	w.Match(dbus.NewMatch().Signal(dbus.PropertiesChanged{}))
+	fmt.Println("Listening for signals...")
+	for {
+		select {
+		case <-env.Context().Done():
+			return nil
+		case sig := <-w.Chan():
+			fmt.Printf("Signal %s.%s from %s on object %s:\n  %v\n", sig.Sender.Name(), sig.Name, sig.Sender.Peer().Name(), sig.Sender.Object().Path(), sig.Body)
+			if sig.Overflow {
+				fmt.Println("OVERFLOW, some signals lost")
+			}
+		}
+	}
 }
