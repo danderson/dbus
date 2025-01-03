@@ -23,7 +23,7 @@ func (p *ObjectPath) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) e
 	return nil
 }
 
-func (p ObjectPath) AlignDBus() int { return 4 }
+func (p ObjectPath) IsDBusStruct() bool { return false }
 
 var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath]())
 

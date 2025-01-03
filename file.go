@@ -13,7 +13,7 @@ type File struct {
 	*os.File
 }
 
-func (f *File) AlignDBus() int { return 4 }
+func (f *File) IsDBusStruct() bool { return false }
 
 var fdSignature = mkSignature(reflect.TypeFor[File]())
 

@@ -338,3 +338,38 @@ func allocSteps(t reflect.Type, idx []int) [][]int {
 	ret = append(ret, idx[prev:])
 	return ret
 }
+
+type structer interface {
+	IsDBusStruct() bool
+}
+
+var structerType = reflect.TypeFor[structer]()
+
+// alignAsStruct reports whether t aligns like a DBus struct, i.e. to
+// 8 byte boundaries.
+func alignAsStruct(t reflect.Type) bool {
+	// Deref *****Thing down to just *Thing.
+	for t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	// Only obey IsDBusStruct() if the type implements a full
+	// marshaler or unmarshaler, a single looseleaf IsDBusStruct
+	// doesn't count.
+	if t.Implements(marshalerType) || t.Implements(unmarshalerType) {
+		if t.Kind() == reflect.Pointer && t.Elem().Implements(structerType) {
+			// structer is implemented with a value receiver, so we
+			// have to alloc a zero value to query it.
+			return reflect.Zero(t.Elem()).Interface().(structer).IsDBusStruct()
+		} else {
+			return reflect.Zero(t).Interface().(structer).IsDBusStruct()
+		}
+	}
+
+	// If the type isn't a Marshaler/Unmarshaler, structness is
+	// determined by... well, by being a struct.
+	if t.Kind() == reflect.Pointer {
+		return t.Elem().Kind() == reflect.Struct
+	} else {
+		return t.Kind() == reflect.Struct
+	}
+}

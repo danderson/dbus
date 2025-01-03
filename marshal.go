@@ -88,15 +88,16 @@ func Marshal(ctx context.Context, v any, ord fragments.ByteOrder) ([]byte, error
 // Marshaler is the interface implemented by types that can marshal
 // themselves to the DBus wire format.
 //
-// SignatureDBus and AlignDBus must return constants that do not
-// depend on the value being encoded.
+// SignatureDBus and IsDBusStruct are invoked on zero values of the
+// Marshaler, and must return constant values.
 //
-// MarshalDBus may assume that the output has already been padded
-// according to the value returned by AlignDBus.
+// MarshalDBus is responsible for inserting padding appropriate to the
+// values being encoded, and for producing output in a way that agrees
+// with the values of SignatureDBus and IsDBusStruct.
 type Marshaler interface {
 	SignatureDBus() Signature
-	AlignDBus() int
-	MarshalDBus(ctx context.Context, st *fragments.Encoder) error
+	IsDBusStruct() bool
+	MarshalDBus(ctx context.Context, e *fragments.Encoder) error
 }
 
 var marshalerType = reflect.TypeFor[Marshaler]()
@@ -200,7 +201,6 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 func newMarshalEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		m := v.Interface().(Marshaler)
-		st.Pad(m.AlignDBus())
 		return m.MarshalDBus(ctx, st)
 	}
 }
@@ -299,14 +299,7 @@ func newSliceEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 
 	elemEnc := encoders.Get(t.Elem())
-	var isStruct bool
-	if t.Elem().Implements(marshalerType) {
-		isStruct = reflect.Zero(t.Elem()).Interface().(Marshaler).AlignDBus() == 8
-	} else if ptr := reflect.PointerTo(t.Elem()); ptr.Implements(marshalerType) {
-		isStruct = reflect.Zero(ptr).Interface().(Marshaler).AlignDBus() == 8
-	} else {
-		isStruct = t.Elem().Kind() == reflect.Struct
-	}
+	isStruct := alignAsStruct(t.Elem())
 
 	return func(ctx context.Context, st *fragments.Encoder, v reflect.Value) error {
 		return st.Array(isStruct, func() error {

@@ -58,7 +58,7 @@ type NameOwnerChanged struct {
 	New  *Peer
 }
 
-func (s *NameOwnerChanged) AlignDBus() int { return 8 }
+func (s *NameOwnerChanged) IsDBusStruct() bool { return true }
 
 func (s *NameOwnerChanged) SignatureDBus() Signature { return mustParseSignature("sss") }
 
@@ -104,7 +104,7 @@ type PropertiesChanged struct {
 	Invalidated mapset.Set[string]
 }
 
-func (s *PropertiesChanged) AlignDBus() int { return 8 }
+func (s *PropertiesChanged) IsDBusStruct() bool { return true }
 
 func (s *PropertiesChanged) SignatureDBus() Signature { return mustParseSignature("sa{sv}as") }
 
@@ -138,7 +138,7 @@ type InterfacesAdded struct {
 	Interfaces []Interface
 }
 
-func (s *InterfacesAdded) AlignDBus() int { return 8 }
+func (s *InterfacesAdded) IsDBusStruct() bool { return true }
 
 func (s *InterfacesAdded) SignatureDBus() Signature { return mustParseSignature("oa{sa{sv}}") }
 
@@ -171,7 +171,7 @@ type InterfacesRemoved struct {
 	Interfaces []Interface
 }
 
-func (s *InterfacesRemoved) AlignDBus() int { return 8 }
+func (s *InterfacesRemoved) IsDBusStruct() bool { return true }
 
 func (s *InterfacesRemoved) SignatureDBus() Signature { return mustParseSignature("oa{sa{sv}}") }
 

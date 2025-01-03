@@ -10,7 +10,7 @@ import (
 
 type byteOrder bool
 
-func (*byteOrder) AlignDBus() int { return 1 }
+func (*byteOrder) IsDBusStruct() bool { return false }
 
 var byteOrderSignature = mkSignature(reflect.TypeFor[uint8]())
 
@@ -45,11 +45,17 @@ const (
 
 type structAlign struct{}
 
-func (*structAlign) AlignDBus() int           { return 8 }
+func (*structAlign) IsDBusStruct() bool       { return true }
 func (*structAlign) SignatureDBus() Signature { return Signature{} }
 
-func (*structAlign) MarshalDBus(context.Context, *fragments.Encoder) error   { return nil }
-func (*structAlign) UnmarshalDBus(context.Context, *fragments.Decoder) error { return nil }
+func (*structAlign) MarshalDBus(_ context.Context, e *fragments.Encoder) error {
+	e.Pad(8)
+	return nil
+}
+func (*structAlign) UnmarshalDBus(_ context.Context, d *fragments.Decoder) error {
+	d.Pad(8)
+	return nil
+}
 
 // header is a DBus message header, minus the initial byte order
 // indicator byte.

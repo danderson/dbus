@@ -180,7 +180,7 @@ func (s *Signature) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) er
 	return err
 }
 
-func (s Signature) AlignDBus() int { return 1 }
+func (s Signature) IsDBusStruct() bool { return false }
 
 var signatureSignature = mkSignature(reflect.TypeFor[Signature]())
 
@@ -318,15 +318,24 @@ func uncachedSignatureOf(t reflect.Type) Signature {
 	if t == nil {
 		return sigErr(t, "nil interface")
 	}
+
+	// Deref all but one level of pointers, to check for Marshaler/Unmarshaler.
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
+	t = reflect.PointerTo(t)
 
-	if t.Implements(signerType) {
-		return reflect.Zero(t).Interface().(signer).SignatureDBus()
-	} else if ptr := reflect.PointerTo(t); ptr.Implements(signerType) {
-		return reflect.Zero(ptr).Interface().(signer).SignatureDBus()
+	if t.Implements(marshalerType) || t.Implements(unmarshalerType) {
+		if t.Elem().Implements(signerType) {
+			return reflect.Zero(t.Elem()).Interface().(signer).SignatureDBus()
+		} else {
+			return reflect.Zero(t).Interface().(signer).SignatureDBus()
+		}
 	}
+
+	// Strip off the last pointer layer, the rest of the signature
+	// logic operates on the leaf type.
+	t = t.Elem()
 
 	if ret := kindToType[t.Kind()]; ret != nil {
 		return mkSignature(ret)

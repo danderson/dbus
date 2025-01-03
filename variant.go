@@ -45,7 +45,7 @@ func (v *Variant) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error
 	return nil
 }
 
-func (v Variant) AlignDBus() int { return 1 }
+func (v Variant) IsDBusStruct() bool { return false }
 
 var variantSignature = mkSignature(variantType)
 

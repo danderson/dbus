@@ -114,18 +114,19 @@ func Unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v a
 // Unmarshaler is the interface implemented by types that can
 // unmarshal themselves.
 //
-// SignatureDBus and AlignDBus must return constants that do not
-// depend on the value being decoded.
+// SignatureDBus and IsDBusStruct are invoked on zero values of the
+// Unmarshaler, and must return constant values.
 //
 // UnmarshalDBus must have a pointer receiver. If Unmarshal encounters
 // an Unmarshaler whose UnmarshalDBus method takes a value receiver,
 // it will return a [TypeError].
 //
-// UnmarshalDBus may assume that the output has already been padded
-// according to the value returned by AlignDBus.
+// UnmarshalDBus is responsible for consuming padding appropriate to
+// the values being encoded, and for consuming input in a way that
+// agrees with the values of SignatureDBus and IsDBusStruct.
 type Unmarshaler interface {
 	SignatureDBus() Signature
-	AlignDBus() int
+	IsDBusStruct() bool
 	UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error
 }
 
@@ -243,7 +244,6 @@ func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 			v.Set(elem)
 		}
 		m := v.Interface().(Unmarshaler)
-		st.Pad(m.AlignDBus())
 		return m.UnmarshalDBus(ctx, st)
 	}
 }
@@ -400,14 +400,7 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 
 	elemDec := decoders.Get(t.Elem())
-	var isStruct bool
-	if t.Elem().Implements(unmarshalerType) {
-		isStruct = reflect.Zero(t.Elem()).Interface().(Marshaler).AlignDBus() == 8
-	} else if ptr := reflect.PointerTo(t.Elem()); ptr.Implements(marshalerType) {
-		isStruct = reflect.Zero(ptr).Interface().(Marshaler).AlignDBus() == 8
-	} else {
-		isStruct = t.Elem().Kind() == reflect.Struct
-	}
+	isStruct := alignAsStruct(t.Elem())
 
 	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		v.Set(v.Slice(0, 0))

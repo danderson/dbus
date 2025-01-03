@@ -120,7 +120,7 @@ func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, st *fragments.Decod
 	return nil
 }
 
-func (s SelfMarshalerVal) AlignDBus() int { return 3 }
+func (s SelfMarshalerVal) IsDBusStruct() bool { return false }
 
 func (s SelfMarshalerVal) SignatureDBus() dbus.Signature {
 	return mustSignatureFor[uint16]()
@@ -151,7 +151,7 @@ func (s *SelfMarshalerPtr) UnmarshalDBus(ctx context.Context, st *fragments.Deco
 	return nil
 }
 
-func (s *SelfMarshalerPtr) AlignDBus() int { return 3 }
+func (s *SelfMarshalerPtr) IsDBusStruct() bool { return false }
 
 func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature {
 	return mustSignatureFor[uint16]()
