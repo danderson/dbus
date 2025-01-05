@@ -201,11 +201,8 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 		if hdr.Signature.IsZero() {
 			return ""
 		}
-		for p := range hdr.Signature.Parts() {
-			if p.Type() != reflect.TypeFor[string]() {
-				return ""
-			}
-			break
+		if s := hdr.Signature.String(); s != "s" && !strings.HasPrefix(s, "(s") {
+			return ""
 		}
 		dec := fragments.Decoder{
 			Order: hdr.Order.Order(),

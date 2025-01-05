@@ -331,7 +331,7 @@ func TestDecoder(t *testing.T) {
 				0x75, 0x69, 0x6e, 0x74, 0x31, 0x36, // "uint16"
 			},
 			func(d *mustDecoder) {
-				d.Mapper = func(t reflect.Type) fragments.DecoderFunc {
+				d.Mapper = func(t reflect.Type) (fragments.DecoderFunc, error) {
 					return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 						want := v.Type().String()
 						gotBs, err := d.Read(len(want))
@@ -343,7 +343,7 @@ func TestDecoder(t *testing.T) {
 						}
 						v.Set(reflect.Zero(t))
 						return nil
-					}
+					}, nil
 				}
 				var s string
 				d.MustValue(&s)

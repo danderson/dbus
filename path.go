@@ -27,7 +27,7 @@ func (p *ObjectPath) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) e
 
 func (p ObjectPath) IsDBusStruct() bool { return false }
 
-var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath]())
+var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath](), "o")
 
 func (p ObjectPath) SignatureDBus() Signature { return objectPathSignature }
 

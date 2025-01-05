@@ -7,19 +7,23 @@ import (
 
 type TypeError struct {
 	Type   string
-	Reason string
+	Reason error
 }
 
 func (e TypeError) Error() string {
 	return fmt.Sprintf("dbus cannot represent %s: %s", e.Type, e.Reason)
 }
 
-func typeErr(t reflect.Type, reason string) error {
+func (e TypeError) Unwrap() error {
+	return e.Reason
+}
+
+func typeErr(t reflect.Type, reason string, args ...any) error {
 	ts := ""
 	if t != nil {
 		ts = t.String()
 	}
-	return TypeError{ts, reason}
+	return TypeError{ts, fmt.Errorf(reason, args...)}
 }
 
 type CallError struct {

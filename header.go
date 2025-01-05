@@ -12,7 +12,7 @@ type byteOrder bool
 
 func (*byteOrder) IsDBusStruct() bool { return false }
 
-var byteOrderSignature = mkSignature(reflect.TypeFor[uint8]())
+var byteOrderSignature = mkSignature(reflect.TypeFor[uint8](), "y")
 
 func (*byteOrder) SignatureDBus() Signature { return byteOrderSignature }
 

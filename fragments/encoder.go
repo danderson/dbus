@@ -3,6 +3,7 @@ package fragments
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 )
 
@@ -20,7 +21,7 @@ type Encoder struct {
 	// Mapper provides [EncoderFunc]s for types given to
 	// [Encoder.Value]. If mapper is nil, the Encoder functions
 	// normally except that [Encoder.Value] always returns an error.
-	Mapper func(reflect.Type) EncoderFunc
+	Mapper func(reflect.Type) (EncoderFunc, error)
 	// Out is the encoded output.
 	Out []byte
 }
@@ -88,7 +89,10 @@ func (e *Encoder) Value(ctx context.Context, v any) error {
 	if e.Mapper == nil {
 		return errors.New("Mapper not provided to Encoder")
 	}
-	fn := e.Mapper(reflect.TypeOf(v))
+	fn, err := e.Mapper(reflect.TypeOf(v))
+	if err != nil {
+		return fmt.Errorf("getting encoder for %T: %w", v, err)
+	}
 	return fn(ctx, e, reflect.ValueOf(v))
 }
 

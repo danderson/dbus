@@ -23,7 +23,7 @@ type Decoder struct {
 	// Mapper provides [DecoderFunc]s for types given to
 	// [Decoder.Value]. If mapper is nil, the Decoder functions
 	// normally except that [Decoder.Value] always returns an error.
-	Mapper func(reflect.Type) DecoderFunc
+	Mapper func(reflect.Type) (DecoderFunc, error)
 	// In is the input stream to read.
 	In io.Reader
 
@@ -138,7 +138,10 @@ func (d *Decoder) Value(ctx context.Context, v any) error {
 	if rv.IsNil() {
 		return fmt.Errorf("outval of Decoder.Value must not be a nil pointer")
 	}
-	fn := d.Mapper(rv.Type().Elem())
+	fn, err := d.Mapper(rv.Type().Elem())
+	if err != nil {
+		return fmt.Errorf("getting decoder for %T: %w", v, err)
+	}
 	return fn(ctx, d, rv.Elem())
 }
 

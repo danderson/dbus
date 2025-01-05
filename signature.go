@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"iter"
 	"reflect"
 	"strings"
 
@@ -13,29 +12,128 @@ import (
 
 // A Signature describes the type of a DBus value.
 type Signature struct {
-	parts   []reflect.Type
-	msgBody bool
+	typ reflect.Type
+	str string
 }
 
-func mkSignature(parts ...reflect.Type) Signature {
-	return Signature{parts, false}
+func (s Signature) asMsgBody() Signature {
+	if s.typ.Kind() != reflect.Struct {
+		return s
+	}
+	return Signature{s.typ, s.str[1 : len(s.str)-1]}
+}
+
+// String returns the string encoding of the Signature, as described
+// in the DBus specification.
+func (s Signature) String() string {
+	return s.str
+}
+
+func (s Signature) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
+	if len(s.str) > 255 {
+		return fmt.Errorf("signature exceeds maximum length of 255 bytes")
+	}
+	e.Uint8(uint8(len(s.str)))
+	e.Write([]byte(s.str))
+	e.Uint8(0)
+	return nil
+}
+
+func (s *Signature) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
+	u8, err := st.Uint8()
+	if err != nil {
+		return err
+	}
+	bs, err := st.Read(int(u8) + 1)
+	*s, err = ParseSignature(string(bs[:len(bs)-1]))
+	return err
+}
+
+func (s Signature) IsDBusStruct() bool { return false }
+
+var signatureSignature = mkSignature(reflect.TypeFor[Signature](), "g")
+
+func (s Signature) SignatureDBus() Signature {
+	return signatureSignature
+}
+
+// IsZero reports whether the signature is the zero value. A zero
+// Signature describes a void value.
+func (s Signature) IsZero() bool {
+	return s.typ == nil
+}
+
+// Type returns the reflect.Type the Signature represents.
+func (s Signature) Type() reflect.Type {
+	return s.typ
+}
+
+// Value returns a new reflect.Value for the type the signature
+// represents.
+func (s Signature) Value() reflect.Value {
+	t := s.Type()
+	if t == nil {
+		return reflect.Value{}
+	}
+	return reflect.New(t)
+}
+
+var (
+	typeToSignature cache[reflect.Type, Signature]
+	strToSignature  cache[string, Signature]
+)
+
+func mkSignature(typ reflect.Type, str string) Signature {
+	return Signature{typ, str}
 }
 
 // ParseSignature parses a DBus type signature string.
 func ParseSignature(sig string) (Signature, error) {
+	if ret, err := strToSignature.Get(sig); err == nil {
+		return ret, nil
+	} else if !errors.Is(err, errNotFound) {
+		return Signature{}, err
+	}
+
 	var (
-		ret  Signature
-		rest = sig
-		part reflect.Type
-		err  error
+		rest  = sig
+		parts []reflect.Type
+		part  reflect.Type
+		err   error
 	)
 	for rest != "" {
 		part, rest, err = parseOne(rest, false)
 		if err != nil {
-			return Signature{}, fmt.Errorf("invalid type signature %q: %w", sig, err)
+			err := fmt.Errorf("invalid type signature %q: %w", sig, err)
+			strToSignature.SetErr(sig, err)
+			return Signature{}, err
 		}
-		ret.parts = append(ret.parts, part)
+		parts = append(parts, part)
 	}
+
+	var ret Signature
+	switch len(parts) {
+	case 0:
+		ret = mkSignature(nil, "")
+	case 1:
+		ret = mkSignature(parts[0], sig)
+	default:
+		fs := make([]reflect.StructField, len(parts))
+		for i, f := range parts {
+			fs[i] = reflect.StructField{
+				Name: fmt.Sprintf("Field%d", i),
+				Type: f,
+			}
+		}
+		st := reflect.StructOf(fs)
+		ret = mkSignature(st, "("+sig+")")
+		// Also add the adjusted struct signature to cache.
+		strToSignature.Set(ret.str, ret)
+	}
+
+	typeToSignature.Set(ret.typ, ret)
+	strToSignature.Set(sig, ret)
+
 	return ret, nil
 }
 
@@ -50,7 +148,7 @@ func mustParseSignature(sig string) Signature {
 // parseOne consumes the first complete type from the front of sig,
 // and returns the corresponding reflect.Type as well as the remainder
 // of the type string.
-func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
+func parseOne(sig string, inArray bool) (t reflect.Type, rest string, err error) {
 	if ret, ok := strToType[sig[0]]; ok {
 		return ret, sig[1:], nil
 	}
@@ -115,205 +213,40 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 	}
 }
 
-func (s Signature) asMsgBody() Signature {
-	return Signature{s.parts, true}
-}
-
-// String returns the string encoding of the Signature, as described
-// in the DBus specification.
-func (s Signature) String() string {
-	switch len(s.parts) {
-	case 0:
-		return ""
-	case 1:
-		ret := stringForType(s.parts[0])
-		if s.msgBody && s.parts[0].Kind() == reflect.Struct {
-			// Strip outer parens off struct to turn it into a message
-			// payload signature.
-			ret = ret[1 : len(ret)-1]
-		}
-		return ret
-	default:
-		ret := make([]string, len(s.parts))
-		for i, p := range s.parts {
-			ret[i] = stringForType(p)
-		}
-		return strings.Join(ret, "")
-	}
-}
-
-func stringForType(t reflect.Type) string {
-	if ret := typeToStr[t]; ret != 0 {
-		return string(ret)
-	}
-	if ret := kindToStr[t.Kind()]; ret != 0 {
-		return string(ret)
-	}
-
-	switch t.Kind() {
-	case reflect.Slice:
-		return "a" + stringForType(t.Elem())
-	case reflect.Map:
-		return fmt.Sprintf("a{%s%s}", stringForType(t.Key()), stringForType(t.Elem()))
-	case reflect.Struct:
-		var ret []string
-		fs, err := getStructInfo(t)
-		if err != nil {
-			panic(fmt.Sprintf("printing Signature for %s: %v", t, err))
-		}
-		for _, f := range fs.StructFields {
-			ret = append(ret, stringForType(f.Type))
-		}
-		return fmt.Sprintf("(%s)", strings.Join(ret, ""))
-	default:
-		panic(fmt.Sprintf("unknown signature type %s", t))
-	}
-}
-
-func (s Signature) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
-	str := s.String()
-	if len(str) > 255 {
-		return fmt.Errorf("signature exceeds maximum length of 255 bytes")
-	}
-	e.Uint8(uint8(len(str)))
-	e.Write([]byte(str))
-	e.Uint8(0)
-	return nil
-}
-
-func (s *Signature) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
-	u8, err := st.Uint8()
-	if err != nil {
-		return err
-	}
-	bs, err := st.Read(int(u8) + 1)
-	*s, err = ParseSignature(string(bs[:len(bs)-1]))
-	return err
-}
-
-func (s Signature) IsDBusStruct() bool { return false }
-
-var signatureSignature = mkSignature(reflect.TypeFor[Signature]())
-
-func (s Signature) SignatureDBus() Signature {
-	return signatureSignature
-}
-
-// IsZero reports whether the signature is the zero value. A zero
-// Signature describes a void value.
-func (s Signature) IsZero() bool {
-	return len(s.parts) == 0
-}
-
-// IsSingle reports whether the signature contains a single complete
-// type, as opposed to being a multi-type message signature.
-func (s Signature) IsSingle() bool {
-	return len(s.parts) == 1
-}
-
-// onlyType returns s.parts[0] if s.IsSingle(), and panics otherwise.
-func (s Signature) onlyType() reflect.Type {
-	if !s.IsSingle() {
-		panic("onlyType called on non-single signature")
-	}
-	return s.parts[0]
-}
-
-// Parts iterates over the component parts of a DBus type signature.
-//
-// For signatures representing a single Go type, the iterator yields a
-// single value. For type signatures describing a DBus message, the
-// iterator yields the Signaturee of each field of the message in
-// sequence.
-func (s Signature) Parts() iter.Seq[Signature] {
-	return func(yield func(Signature) bool) {
-		for _, p := range s.parts {
-			if !yield(mkSignature(p)) {
-				return
-			}
-		}
-	}
-}
-
-// Type returns the reflect.Type the Signature represents.
-func (s Signature) Type() reflect.Type {
-	if s.IsZero() {
-		return nil
-	}
-	if s.IsSingle() {
-		return s.parts[0]
-	}
-	fs := make([]reflect.StructField, len(s.parts))
-	for i, p := range s.parts {
-		fs[i] = reflect.StructField{
-			Name: fmt.Sprintf("Field%d", i),
-			Type: p,
-		}
-	}
-	return reflect.StructOf(fs)
-}
-
-// Value returns a new reflect.Value for the type the signature
-// represents.
-func (s Signature) Value() reflect.Value {
-	t := s.Type()
-	if t == nil {
-		return reflect.Value{}
-	}
-	return reflect.New(t)
-}
-
 type signer interface {
 	SignatureDBus() Signature
 }
 
 var signerType = reflect.TypeFor[signer]()
 
-type sigCacheEntry struct {
-	sig Signature
-	err error
-}
-
-var signatures cache[sigCacheEntry]
-
 // SignatureFor returns the Signature for the given type.
 func SignatureFor[T any]() (Signature, error) {
-	ret := signatures.GetRecover(reflect.TypeFor[T]())
-	if ret.err != nil {
-		return Signature{}, ret.err
-	}
-	return ret.sig, nil
+	return signatureFor(reflect.TypeFor[T]())
 }
 
 // SignatureOf returns the Signature for the given value.
 func SignatureOf(v any) (Signature, error) {
-	ret := signatures.GetRecover(reflect.TypeOf(v))
-	if ret.err != nil {
-		return Signature{}, ret.err
+	return signatureFor(reflect.TypeOf(v))
+}
+
+func signatureFor(t reflect.Type) (sig Signature, err error) {
+	if ret, err := typeToSignature.Get(t); err == nil {
+		return ret, nil
+	} else if !errors.Is(err, errNotFound) {
+		return Signature{}, err
 	}
-	return ret.sig, nil
-}
+	// Note, defer captures the type value before we mess with it
+	// below.
+	defer func(t reflect.Type) {
+		if err != nil {
+			typeToSignature.SetErr(t, err)
+		} else {
+			typeToSignature.Set(t, sig)
+		}
+	}(t)
 
-func sigErr(t reflect.Type, reason string) Signature {
-	signatures.Unwind(sigCacheEntry{err: typeErr(t, reason)})
-	// So that callers can return the result of this constructor and
-	// pretend that it's not doing any non-local return. The non-local
-	// return is just an optimization so that encoders don't waste
-	// time partially encoding types that will never fully succeed.
-	return Signature{}
-}
-
-func signatureOf(t reflect.Type) Signature {
-	ret := signatures.Get(t)
-	if ret.err != nil {
-		signatures.Unwind(ret)
-	}
-	return ret.sig
-}
-
-func uncachedSignatureOf(t reflect.Type) Signature {
 	if t == nil {
-		return sigErr(t, "nil interface")
+		return Signature{}, typeErr(t, "nil interface")
 	}
 
 	// Deref all but one level of pointers, to check for Marshaler/Unmarshaler.
@@ -324,9 +257,9 @@ func uncachedSignatureOf(t reflect.Type) Signature {
 
 	if t.Implements(marshalerType) || t.Implements(unmarshalerType) {
 		if t.Elem().Implements(signerType) {
-			return reflect.Zero(t.Elem()).Interface().(signer).SignatureDBus()
+			return reflect.Zero(t.Elem()).Interface().(signer).SignatureDBus(), nil
 		} else {
-			return reflect.Zero(t).Interface().(signer).SignatureDBus()
+			return reflect.Zero(t).Interface().(signer).SignatureDBus(), nil
 		}
 	}
 
@@ -335,45 +268,59 @@ func uncachedSignatureOf(t reflect.Type) Signature {
 	t = t.Elem()
 
 	if ret := kindToType[t.Kind()]; ret != nil {
-		return mkSignature(ret)
+		return mkSignature(ret, string(kindToStr[t.Kind()])), nil
 	}
 
 	switch t.Kind() {
 	case reflect.Slice, reflect.Array:
-		es := signatureOf(t.Elem())
-		return mkSignature(reflect.SliceOf(es.onlyType()))
+		es, err := signatureFor(t.Elem())
+		if err != nil {
+			return Signature{}, err
+		}
+		return mkSignature(reflect.SliceOf(es.typ), "a"+es.str), nil
 	case reflect.Map:
 		k := t.Key()
 		if k == variantType {
 			// Would technically get caught by the struct-ness test
 			// below, but Variant is a common dbus thing and we should
 			// report a better error for it specifically.
-			return sigErr(t, "map keys cannot be Variants")
+			return Signature{}, typeErr(t, "map keys cannot be Variants")
 		}
 		switch k.Kind() {
 		case reflect.Slice:
-			return sigErr(t, "map keys cannot be slices")
+			return Signature{}, typeErr(t, "map keys cannot be slices")
 		case reflect.Array:
-			return sigErr(t, "map keys cannot be arrays")
+			return Signature{}, typeErr(t, "map keys cannot be arrays")
 		case reflect.Struct:
-			return sigErr(t, "map keys cannot be structs")
+			return Signature{}, typeErr(t, "map keys cannot be structs")
 		}
-		ks := signatureOf(k)
-		vs := signatureOf(t.Elem())
+		ks, err := signatureFor(k)
+		if err != nil {
+			return Signature{}, err
+		}
+		vs, err := signatureFor(t.Elem())
+		if err != nil {
+			return Signature{}, err
+		}
 
-		return mkSignature(reflect.MapOf(ks.onlyType(), vs.onlyType()))
+		return mkSignature(reflect.MapOf(ks.typ, vs.typ), "a{"+ks.str+vs.str+"}"), nil
 	case reflect.Struct:
 		fs, err := getStructInfo(t)
 		if err != nil {
-			return sigErr(t, fmt.Sprintf("getting struct info: %v", err.Error()))
+			return Signature{}, typeErr(t, "getting struct info: %w", err)
 		}
+		var s []string
 		for _, f := range fs.StructFields {
 			// Descend through all fields, to look for cyclic
 			// references.
-			signatureOf(f.Type)
+			fieldSig, err := signatureFor(f.Type)
+			if err != nil {
+				return Signature{}, err
+			}
+			s = append(s, fieldSig.str)
 		}
-		return mkSignature(t)
+		return mkSignature(t, "("+strings.Join(s, "")+")"), nil
 	}
 
-	return sigErr(t, "no mapping available")
+	return Signature{}, typeErr(t, "no mapping available")
 }

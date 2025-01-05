@@ -15,7 +15,7 @@ type File struct {
 
 func (f *File) IsDBusStruct() bool { return false }
 
-var fdSignature = mkSignature(reflect.TypeFor[File]())
+var fdSignature = mkSignature(reflect.TypeFor[File](), "h")
 
 func (f *File) SignatureDBus() Signature { return fdSignature }
 

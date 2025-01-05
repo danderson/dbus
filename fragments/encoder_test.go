@@ -225,11 +225,11 @@ func TestEncoder(t *testing.T) {
 		{
 			"mapper",
 			func(e *fragments.Encoder) {
-				e.Mapper = func(t reflect.Type) fragments.EncoderFunc {
+				e.Mapper = func(t reflect.Type) (fragments.EncoderFunc, error) {
 					return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 						e.Write([]byte(v.Type().String()))
 						return nil
-					}
+					}, nil
 				}
 				e.Value(context.Background(), "foo")
 				e.Value(context.Background(), uint16(42))

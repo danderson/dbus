@@ -2,6 +2,7 @@ package dbus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -102,10 +103,13 @@ func Unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v a
 	if val.IsNil() {
 		return fmt.Errorf("can't unmarshal into a nil pointer")
 	}
-	dec := decoders.GetRecover(val.Type().Elem())
+	dec, err := decoderFor(val.Type().Elem())
+	if err != nil {
+		return err
+	}
 	st := fragments.Decoder{
 		Order:  ord,
-		Mapper: decoders.GetRecover,
+		Mapper: decoderFor,
 		In:     data,
 	}
 	return dec(ctx, &st, val.Elem())
@@ -138,10 +142,24 @@ type unmarshalerOnly interface {
 
 var unmarshalerOnlyType = reflect.TypeFor[unmarshalerOnly]()
 
-var decoders cache[fragments.DecoderFunc]
+var decoders cache[reflect.Type, fragments.DecoderFunc]
 
-// uncachedTypeDecoder returns the DecoderFunc for t.
-func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
+func decoderFor(t reflect.Type) (ret fragments.DecoderFunc, err error) {
+	if ret, err := decoders.Get(t); err == nil {
+		return ret, nil
+	} else if !errors.Is(err, errNotFound) {
+		return nil, err
+	}
+	// Note, defer captures the type value before we mess with it
+	// below.
+	defer func(t reflect.Type) {
+		if err != nil {
+			decoders.SetErr(t, err)
+		} else {
+			decoders.Set(t, ret)
+		}
+	}(t)
+
 	// We only want Unmarshalers with pointer receivers, since a value
 	// receiver would silently discard the results of the
 	// UnmarshalDBus call and lead to confusing bugs. There are two
@@ -160,14 +178,14 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 	isPtr := t.Kind() == reflect.Pointer
 	if t.Implements(unmarshalerType) {
 		if !isPtr || t.Elem().Implements(unmarshalerOnlyType) {
-			return newErrDecoder(t, "refusing to use dbus.Unmarshaler implementation with value receivers, Unmarshalers must use pointer receivers.")
+			return nil, typeErr(t, "refusing to use dbus.Unmarshaler implementation with value receiver, Unmarshalers must use pointer receivers.")
 		} else {
 			// First case, can unmarshal into pointer.
-			return newMarshalDecoder(t)
+			return newMarshalDecoder(t), nil
 		}
 	} else if !isPtr && reflect.PointerTo(t).Implements(unmarshalerType) {
 		// Second case, unmarshal into value.
-		return newAddrMarshalDecoder(t)
+		return newAddrMarshalDecoder(t), nil
 	}
 
 	switch t.Kind() {
@@ -175,17 +193,19 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 		// Note, pointers to Unmarshaler are handled above.
 		return newPtrDecoder(t)
 	case reflect.Bool:
-		return newBoolDecoder()
+		return newBoolDecoder(), nil
 	case reflect.Int, reflect.Uint:
-		return newErrDecoder(t, "int and uint aren't portable, use fixed width integers")
-	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return newIntDecoder(t)
+		return nil, typeErr(t, "int and uint aren't portable, use fixed width integers")
+	case reflect.Int8:
+		return nil, typeErr(t, "int8 has no corresponding DBus type, use uint8 instead")
+	case reflect.Int16, reflect.Int32, reflect.Int64:
+		return newIntDecoder(t), nil
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return newUintDecoder(t)
+		return newUintDecoder(t), nil
 	case reflect.Float32, reflect.Float64:
-		return newFloatDecoder()
+		return newFloatDecoder(), nil
 	case reflect.String:
-		return newStringDecoder()
+		return newStringDecoder(), nil
 	case reflect.Slice, reflect.Array:
 		return newSliceDecoder(t)
 	case reflect.Struct:
@@ -194,31 +214,7 @@ func uncachedTypeDecoder(t reflect.Type) fragments.DecoderFunc {
 		return newMapDecoder(t)
 	}
 
-	return newErrDecoder(t, "no known mapping")
-}
-
-// newErrDecoder signals that the requested type cannot be decoded to
-// the DBus wire format for the given reason.
-//
-// Internally the function triggers an unwind back to Unmarshal,
-// caching the error with all intermediate DecoderFuncs. This saves
-// time during decoding because Unmarshal can return an error
-// immediately, rather than get halfway through a complex object only
-// to discover that it cannot be decoded.
-//
-// However, the semantics are equivalent to returning the error
-// decoder normally, so callers may use this function like any other
-// DecoderFunc constructor.
-func newErrDecoder(t reflect.Type, reason string) fragments.DecoderFunc {
-	err := typeErr(t, reason)
-	decoders.Unwind(func(context.Context, *fragments.Decoder, reflect.Value) error {
-		return err
-	})
-	// So that callers can return the result of this constructor and
-	// pretend that it's not doing any non-local return. The non-local
-	// return is just an optimization so that decoders don't waste
-	// time partially decoding types that will never fully succeed.
-	return nil
+	return nil, typeErr(t, "no dbus mapping for type")
 }
 
 func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
@@ -239,10 +235,13 @@ func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 }
 
-func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
+func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	elem := t.Elem()
-	elemDec := decoders.Get(elem)
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	elemDec, err := decoderFor(elem)
+	if err != nil {
+		return nil, err
+	}
+	fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			if !v.CanSet() {
 				panic("got an unsettable nil pointer, should be impossible!")
@@ -257,6 +256,7 @@ func newPtrDecoder(t reflect.Type) fragments.DecoderFunc {
 		}
 		return nil
 	}
+	return fn, nil
 }
 
 func newBoolDecoder() fragments.DecoderFunc {
@@ -378,9 +378,9 @@ func newStringDecoder() fragments.DecoderFunc {
 	}
 }
 
-func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
+func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	if t.Elem().Kind() == reflect.Uint8 {
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+		fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 			bs, err := st.Bytes()
 			if err != nil {
 				return err
@@ -388,12 +388,16 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 			v.SetBytes(bs)
 			return nil
 		}
+		return fn, nil
 	}
 
-	elemDec := decoders.Get(t.Elem())
+	elemDec, err := decoderFor(t.Elem())
+	if err != nil {
+		return nil, err
+	}
 	isStruct := alignAsStruct(t.Elem())
 
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		v.Set(v.Slice(0, 0))
 
 		_, err := st.Array(isStruct, func(i int) error {
@@ -410,23 +414,25 @@ func newSliceDecoder(t reflect.Type) fragments.DecoderFunc {
 
 		return nil
 	}
+	return fn, nil
 }
 
-func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
+func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	fs, err := getStructInfo(t)
 	if err != nil {
-		return newErrDecoder(t, err.Error())
-	}
-	if len(fs.StructFields) == 0 {
-		return newErrDecoder(t, "no exported struct fields")
+		return nil, typeErr(t, "getting struct info: %w", err)
 	}
 
 	var frags []fragments.DecoderFunc
 	for _, f := range fs.StructFields {
-		frags = append(frags, newStructFieldDecoder(f))
+		fDec, err := newStructFieldDecoder(f)
+		if err != nil {
+			return nil, err
+		}
+		frags = append(frags, fDec)
 	}
 
-	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		return d.Struct(func() error {
 			for _, frag := range frags {
 				if err := frag(ctx, d, v); err != nil {
@@ -436,27 +442,38 @@ func newStructDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		})
 	}
+	return fn, nil
 }
 
 // Note, the returned fragment decoder expects to be given the entire
 // struct, not just the one field being decoded.
-func newStructFieldDecoder(f *structField) fragments.DecoderFunc {
+func newStructFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
 	if f.IsVarDict() {
 		return newVarDictFieldDecoder(f)
-	} else {
-		fDec := decoders.Get(f.Type)
-		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-			fv := f.GetWithAlloc(v)
-			return fDec(ctx, d, fv)
-		}
 	}
+
+	fDec, err := decoderFor(f.Type)
+	if err != nil {
+		return nil, err
+	}
+	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		fv := f.GetWithAlloc(v)
+		return fDec(ctx, d, fv)
+	}
+	return fn, nil
 }
 
 // Note, the returned fragment decoder expects to be given the entire
 // struct, not just the one field being decoded.
-func newVarDictFieldDecoder(f *structField) fragments.DecoderFunc {
-	kDec := decoders.Get(f.Type.Key())
-	vDec := decoders.Get(variantType)
+func newVarDictFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
+	kDec, err := decoderFor(f.Type.Key())
+	if err != nil {
+		return nil, err
+	}
+	vDec, err := decoderFor(variantType)
+	if err != nil {
+		return nil, err
+	}
 
 	fields := map[string]*varDictField{}
 	for _, key := range f.VarDictFields.MapKeys() {
@@ -464,7 +481,7 @@ func newVarDictFieldDecoder(f *structField) fragments.DecoderFunc {
 		fields[vf.StrKey] = vf
 	}
 
-	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		unknown := f.GetWithAlloc(v)
 		unknownInit := false
 
@@ -513,18 +530,25 @@ func newVarDictFieldDecoder(f *structField) fragments.DecoderFunc {
 		})
 		return err
 	}
+	return fn, nil
 }
 
-func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
+func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	kt := t.Key()
 	if !mapKeyKinds.Has(kt.Kind()) {
-		return newErrDecoder(t, fmt.Sprintf("invalid map key type %s", kt))
+		return nil, typeErr(t, "invalid map key type %s", kt)
 	}
-	kDec := decoders.Get(kt)
+	kDec, err := decoderFor(kt)
+	if err != nil {
+		return nil, err
+	}
 	vt := t.Elem()
-	vDec := decoders.Get(vt)
+	vDec, err := decoderFor(vt)
+	if err != nil {
+		return nil, err
+	}
 
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			v.Set(reflect.MakeMap(t))
 		} else {
@@ -557,4 +581,5 @@ func newMapDecoder(t reflect.Type) fragments.DecoderFunc {
 		}
 		return nil
 	}
+	return fn, nil
 }
