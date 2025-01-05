@@ -1,4 +1,4 @@
-package dbus_test
+package dbus
 
 import (
 	"bytes"
@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 	"github.com/google/go-cmp/cmp"
 )
@@ -242,7 +241,7 @@ func TestUnmarshal(t *testing.T) {
 			0x00, 0x03, // val=3
 		}, ptr(VarDict{
 			D: 1,
-			Other: map[string]dbus.Variant{
+			Other: map[string]Variant{
 				"a": {uint8(2)},
 				"z": {uint16(3)},
 			},
@@ -307,7 +306,7 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 	}
 
 	b := bytes.NewBuffer(in)
-	err := dbus.Unmarshal(context.Background(), b, fragments.BigEndian, got)
+	err := unmarshal(context.Background(), b, fragments.BigEndian, got)
 	if err != nil {
 		if !wantErr {
 			t.Errorf("Unmarshal(..., %T) got err: %v", want, err)
@@ -326,7 +325,7 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 }
 
 func testRoundTrip(t *testing.T, val any) {
-	bs, err := dbus.Marshal(context.Background(), val, fragments.BigEndian)
+	bs, err := marshal(context.Background(), val, fragments.BigEndian)
 	if err != nil {
 		t.Errorf("re-Marshal(%T) got err: %v", val, err)
 	}

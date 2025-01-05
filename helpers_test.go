@@ -1,10 +1,9 @@
-package dbus_test
+package dbus
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 )
 
@@ -49,7 +48,7 @@ type Tree struct {
 }
 
 // NestedSelfMashalerVal is a struct with a struct field that
-// implements dbus.Marshaler/dbus.Unmarshaler with value method
+// implements Marshaler/Unmarshaler with value method
 // receivers. NestedSelfMashalerVal cannot be unmarshaled, because
 // UnmarshalDBus must be implemented on a pointer receiver.
 type NestedSelfMashalerVal struct {
@@ -58,7 +57,7 @@ type NestedSelfMashalerVal struct {
 }
 
 // NestedSelfMarshalerPtr is a struct with a struct field that
-// implements dbus.Marshaler/dbus.Unmarshaler with pointer method
+// implements Marshaler/Unmarshaler with pointer method
 // receivers.
 type NestedSelfMarshalerPtr struct {
 	A byte
@@ -66,7 +65,7 @@ type NestedSelfMarshalerPtr struct {
 }
 
 // NestedSelfMarshalerPtrPtr is a struct with a struct pointer field
-// that implements dbus.Marshaler/dbus.Unmarshaler with pointer method
+// that implements Marshaler/Unmarshaler with pointer method
 // receivers.
 type NestedSelfMarshalerPtrPtr struct {
 	A byte
@@ -93,9 +92,9 @@ type Embedded_PVP struct {
 	D byte
 }
 
-// SelfMarshalerVal is a struct that implements dbus.Marshaler and
-// dbus.Unmarshaler, with value method receivers. Note the
-// dbus.Unmarshaler implementation is deliberately unusable
+// SelfMarshalerVal is a struct that implements Marshaler and
+// Unmarshaler, with value method receivers. Note the
+// Unmarshaler implementation is deliberately unusable
 // (UnmarshalDBus must have a pointer receiver).
 type SelfMarshalerVal struct {
 	B byte
@@ -122,12 +121,12 @@ func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, st *fragments.Decod
 
 func (s SelfMarshalerVal) IsDBusStruct() bool { return false }
 
-func (s SelfMarshalerVal) SignatureDBus() dbus.Signature {
+func (s SelfMarshalerVal) SignatureDBus() Signature {
 	return mustSignatureFor[uint16]()
 }
 
-// SelfMarshalerPtr is a struct that implements dbus.Marshaler and
-// dbus.Unmarshaler with pointer method receivers.
+// SelfMarshalerPtr is a struct that implements Marshaler and
+// Unmarshaler with pointer method receivers.
 type SelfMarshalerPtr struct {
 	B byte
 }
@@ -153,7 +152,7 @@ func (s *SelfMarshalerPtr) UnmarshalDBus(ctx context.Context, st *fragments.Deco
 
 func (s *SelfMarshalerPtr) IsDBusStruct() bool { return false }
 
-func (s *SelfMarshalerPtr) SignatureDBus() dbus.Signature {
+func (s *SelfMarshalerPtr) SignatureDBus() Signature {
 	return mustSignatureFor[uint16]()
 }
 
@@ -165,7 +164,7 @@ type VarDict struct {
 	C string `dbus:"key=@"`
 	D uint8  `dbus:"key=@"`
 
-	Other map[string]dbus.Variant `dbus:"vardict"`
+	Other map[string]Variant `dbus:"vardict"`
 }
 
 // VarDictByte is a struct that marshals to a DBus dict of byte to
@@ -174,23 +173,15 @@ type VarDictByte struct {
 	A uint16 `dbus:"key=1"`
 	B string `dbus:"key=2"`
 
-	Other map[byte]dbus.Variant `dbus:"vardict"`
+	Other map[byte]Variant `dbus:"vardict"`
 }
 
 func ptr[T any](v T) *T {
 	return &v
 }
 
-func mustParseSignature(s string) dbus.Signature {
-	sig, err := dbus.ParseSignature(s)
-	if err != nil {
-		panic(err)
-	}
-	return sig
-}
-
-func mustSignatureFor[T any]() dbus.Signature {
-	sig, err := dbus.SignatureFor[T]()
+func mustSignatureFor[T any]() Signature {
+	sig, err := SignatureFor[T]()
 	if err != nil {
 		panic(err)
 	}

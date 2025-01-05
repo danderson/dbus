@@ -68,16 +68,6 @@ func (s Signature) Type() reflect.Type {
 	return s.typ
 }
 
-// Value returns a new reflect.Value for the type the signature
-// represents.
-func (s Signature) Value() reflect.Value {
-	t := s.Type()
-	if t == nil {
-		return reflect.Value{}
-	}
-	return reflect.New(t)
-}
-
 var (
 	typeToSignature cache[reflect.Type, Signature]
 	strToSignature  cache[string, Signature]

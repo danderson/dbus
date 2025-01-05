@@ -11,7 +11,7 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
-// Marshal returns the DBus wire encoding of v, using the given byte
+// marshal returns the DBus wire encoding of v, using the given byte
 // ordering.
 //
 // Marshal traverses the value v recursively. If an encountered value
@@ -73,7 +73,7 @@ import (
 //
 // DBus cannot represent cyclic or recursive types. Attempting to
 // encode such values causes Marshal to return a [TypeError].
-func Marshal(ctx context.Context, v any, ord fragments.ByteOrder) ([]byte, error) {
+func marshal(ctx context.Context, v any, ord fragments.ByteOrder) ([]byte, error) {
 	val := reflect.ValueOf(v)
 	enc, err := encoderFor(val.Type())
 	if err != nil {

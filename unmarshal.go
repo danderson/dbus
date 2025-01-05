@@ -11,7 +11,7 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
-// Unmarshal reads a DBus message from r and stores the result in the
+// unmarshal reads a DBus message from r and stores the result in the
 // value pointed to by v. If v is nil or not a pointer, Unmarshal
 // returns a [TypeError].
 //
@@ -92,7 +92,7 @@ import (
 // DBus cannot represent cyclic or recursive types. Attempting to
 // decode into such values causes Unmarshal to return a
 // [TypeError].
-func Unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v any) error {
+func unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v any) error {
 	if v == nil {
 		return fmt.Errorf("can't unmarshal into nil interface")
 	}

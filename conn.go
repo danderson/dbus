@@ -120,7 +120,7 @@ func (c *Conn) readLoop() {
 
 func (c *Conn) dispatchMsg() error {
 	var hdr header
-	if err := Unmarshal(context.Background(), c.t, fragments.NativeEndian, &hdr); err != nil {
+	if err := unmarshal(context.Background(), c.t, fragments.NativeEndian, &hdr); err != nil {
 		return err
 	}
 	bodyReader := io.LimitReader(c.t, int64(hdr.Length))
@@ -175,7 +175,7 @@ func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, 
 	ctx = withContextSender(ctx, pending.iface)
 
 	if pending.resp != nil {
-		if err := Unmarshal(ctx, body, hdr.Order.Order(), pending.resp); err != nil {
+		if err := unmarshal(ctx, body, hdr.Order.Order(), pending.resp); err != nil {
 			return err
 		}
 	}
@@ -234,7 +234,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 	var signal reflect.Value
 	if signalType != nil {
 		signal = reflect.New(signalType)
-		if err := Unmarshal(ctx, body, hdr.Order.Order(), signal.Interface()); err != nil {
+		if err := unmarshal(ctx, body, hdr.Order.Order(), signal.Interface()); err != nil {
 			return err
 		}
 	} else {
@@ -309,7 +309,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	)
 	if body != nil {
 		ctx := withContextPutFiles(context.Background(), &files)
-		payload, err = Marshal(ctx, body, fragments.NativeEndian)
+		payload, err = marshal(ctx, body, fragments.NativeEndian)
 		if err != nil {
 			return err
 		}
@@ -343,7 +343,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		return err
 	}
 
-	bs, err := Marshal(context.Background(), &hdr, fragments.NativeEndian)
+	bs, err := marshal(context.Background(), &hdr, fragments.NativeEndian)
 	if err != nil {
 		return err
 	}

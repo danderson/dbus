@@ -33,15 +33,15 @@ func (v *Variant) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error
 	if err := d.Value(ctx, &sig); err != nil {
 		return fmt.Errorf("reading Variant signature: %w", err)
 	}
-	innerValue := sig.Value()
-	if !innerValue.IsValid() {
+	innerType := sig.Type()
+	if innerType == nil {
 		return fmt.Errorf("unsupported Variant type signature %q", sig)
 	}
-	inner := innerValue.Interface()
-	if err := d.Value(ctx, inner); err != nil {
+	inner := reflect.New(innerType)
+	if err := d.Value(ctx, inner.Interface()); err != nil {
 		return fmt.Errorf("reading Variant value (signature %q): %w", sig, err)
 	}
-	v.Value = innerValue.Elem().Interface()
+	v.Value = inner.Elem().Interface()
 	return nil
 }
 

@@ -1,16 +1,15 @@
-package dbus_test
+package dbus
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 
-	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 )
 
 func mustMarshal(a any) []byte {
-	bs, err := dbus.Marshal(context.Background(), a, fragments.BigEndian)
+	bs, err := marshal(context.Background(), a, fragments.BigEndian)
 	if err != nil {
 		panic(err)
 	}
@@ -20,11 +19,11 @@ func mustMarshal(a any) []byte {
 func ExampleMarshal_vardict() {
 	type NoVardict struct {
 		Name       string
-		Extensions map[uint8]dbus.Variant
+		Extensions map[uint8]Variant
 	}
 	noVardict := mustMarshal(NoVardict{
 		Name: "Weather",
-		Extensions: map[uint8]dbus.Variant{
+		Extensions: map[uint8]Variant{
 			1: {string("Helsinki")},
 			2: {float64(-4.2)},
 		},
@@ -35,7 +34,7 @@ func ExampleMarshal_vardict() {
 		Location    string  `dbus:"key=1"`
 		Temperature float64 `dbus:"key=2"`
 
-		UnknownExtensions map[uint8]dbus.Variant `dbus:"vardict"`
+		UnknownExtensions map[uint8]Variant `dbus:"vardict"`
 	}
 	withVardict := mustMarshal(WithVardict{
 		Name:        "Weather",

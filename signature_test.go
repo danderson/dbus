@@ -1,10 +1,8 @@
-package dbus_test
+package dbus
 
 import (
 	"reflect"
 	"testing"
-
-	"github.com/danderson/dbus"
 )
 
 func TestSignatureOf(t *testing.T) {
@@ -22,9 +20,9 @@ func TestSignatureOf(t *testing.T) {
 		{uint64(0), "t"},
 		{float64(0), "d"},
 		{string(""), "s"},
-		{dbus.Signature{}, "g"},
-		{dbus.ObjectPath(""), "o"},
-		{dbus.File{}, "h"},
+		{Signature{}, "g"},
+		{ObjectPath(""), "o"},
+		{File{}, "h"},
 		{[]string{}, "as"},
 		{[4]byte{}, "ay"},
 		{[][]string{}, "aas"},
@@ -36,7 +34,7 @@ func TestSignatureOf(t *testing.T) {
 		{Embedded{}, "(nby)"},
 		{EmbeddedShadow{}, "(ny)"},
 		{Arrays{}, "(asa(nb)aa(y(nb)))"},
-		{dbus.Variant{int16(0)}, "v"},
+		{Variant{int16(0)}, "v"},
 		{VarDict{}, "(a{sv})"},
 		{VarDictByte{}, "(a{yv})"},
 		{struct{}{}, "()"},
@@ -45,12 +43,12 @@ func TestSignatureOf(t *testing.T) {
 		{Tree{}, ""},
 		{map[Simple]bool{}, ""},
 		{map[[2]int64]bool{}, ""},
-		{map[dbus.Variant]bool{}, ""},
+		{map[Variant]bool{}, ""},
 		{func() int { return 2 }, ""},
 	}
 
 	for _, tc := range tests {
-		gotSig, err := dbus.SignatureOf(tc.in)
+		gotSig, err := SignatureOf(tc.in)
 		gotErr := err != nil
 		wantErr := tc.want == ""
 		if gotErr != wantErr {
@@ -92,9 +90,9 @@ func TestParseSignature(t *testing.T) {
 		{"t", reflect.TypeFor[uint64](), false},
 		{"d", reflect.TypeFor[float64](), false},
 		{"s", reflect.TypeFor[string](), false},
-		{"g", reflect.TypeFor[dbus.Signature](), false},
-		{"o", reflect.TypeFor[dbus.ObjectPath](), false},
-		{"h", reflect.TypeFor[dbus.File](), false},
+		{"g", reflect.TypeFor[Signature](), false},
+		{"o", reflect.TypeFor[ObjectPath](), false},
+		{"h", reflect.TypeFor[File](), false},
 		{"as", reflect.TypeFor[[]string](), false},
 		{"ay", reflect.TypeFor[[]byte](), false},
 		{"aas", reflect.TypeFor[[][]string](), false},
@@ -144,12 +142,12 @@ func TestParseSignature(t *testing.T) {
 				}
 			}
 		}](), false},
-		{"v", reflect.TypeFor[dbus.Variant](), false},
+		{"v", reflect.TypeFor[Variant](), false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.in, func(t *testing.T) {
-			got, gotErr := dbus.ParseSignature(tc.in)
+			got, gotErr := ParseSignature(tc.in)
 			if gotErr != nil {
 				if tc.wantErr {
 					return

@@ -1,11 +1,10 @@
-package dbus_test
+package dbus
 
 import (
 	"bytes"
 	"context"
 	"testing"
 
-	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 )
 
@@ -302,12 +301,12 @@ func TestMarshal(t *testing.T) {
 			0x00, 0x03,
 		}},
 
-		{dbus.ObjectPath("foo"), be, []byte{
+		{ObjectPath("foo"), be, []byte{
 			0x00, 0x00, 0x00, 0x03, // length
 			0x66, 0x6f, 0x6f, // "foo"
 			0x00, // terminator
 		}},
-		{dbus.ObjectPath("foo"), le, []byte{
+		{ObjectPath("foo"), le, []byte{
 			0x03, 0x00, 0x00, 0x00, // length
 			0x66, 0x6f, 0x6f, // "foo"
 			0x00, // terminator
@@ -447,7 +446,7 @@ func TestMarshal(t *testing.T) {
 
 		{VarDict{
 			D: 1,
-			Other: map[string]dbus.Variant{
+			Other: map[string]Variant{
 				"a": {uint8(2)},
 				"z": {uint16(3)},
 			},
@@ -493,7 +492,7 @@ func TestMarshal(t *testing.T) {
 		}},
 		{VarDict{
 			D: 1,
-			Other: map[string]dbus.Variant{
+			Other: map[string]Variant{
 				"a": {uint8(2)},
 				"z": {uint16(3)},
 			},
@@ -547,7 +546,7 @@ func TestMarshal(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got, err := dbus.Marshal(context.Background(), tc.in, tc.enc)
+		got, err := marshal(context.Background(), tc.in, tc.enc)
 		if err != nil {
 			if len(tc.want) != 0 {
 				t.Errorf("Marshal(%T) got err: %v", tc.in, err)

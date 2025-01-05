@@ -1,18 +1,17 @@
-package dbus_test
+package dbus
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 
-	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 )
 
 func ExampleUnmarshal_vardict() {
 	var noVardict struct {
 		Name       string
-		Extensions map[uint8]dbus.Variant
+		Extensions map[uint8]Variant
 	}
 	mustUnmarshal(sampleWireMessage, &noVardict)
 
@@ -27,7 +26,7 @@ func ExampleUnmarshal_vardict() {
 		Location    string  `dbus:"key=1"`
 		Temperature float64 `dbus:"key=2"`
 
-		UnknownExtensions map[uint8]dbus.Variant `dbus:"vardict"`
+		UnknownExtensions map[uint8]Variant `dbus:"vardict"`
 	}
 	mustUnmarshal(sampleWireMessage, &withVardict)
 
@@ -60,7 +59,7 @@ var sampleWireMessage = []byte{
 }
 
 func mustUnmarshal(bs []byte, v any) {
-	err := dbus.Unmarshal(context.Background(), bytes.NewReader(bs), fragments.BigEndian, v)
+	err := unmarshal(context.Background(), bytes.NewReader(bs), fragments.BigEndian, v)
 	if err != nil {
 		panic(err)
 	}

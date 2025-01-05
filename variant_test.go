@@ -1,11 +1,10 @@
-package dbus_test
+package dbus
 
 import (
 	"bytes"
 	"context"
 	"testing"
 
-	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/fragments"
 	"github.com/google/go-cmp/cmp"
 )
@@ -25,7 +24,7 @@ func TestMarshalVariant(t *testing.T) {
 				// val
 				0x05,
 			},
-			dbus.Variant{byte(5)},
+			Variant{byte(5)},
 		},
 
 		{
@@ -38,7 +37,7 @@ func TestMarshalVariant(t *testing.T) {
 				// val
 				0x00, 0x00, 0x00, 0x01,
 			},
-			dbus.Variant{true},
+			Variant{true},
 		},
 
 		{
@@ -52,7 +51,7 @@ func TestMarshalVariant(t *testing.T) {
 				0x00, 0x02,
 				0x00, 0x03,
 			},
-			dbus.Variant{[]uint16{1, 2, 3}},
+			Variant{[]uint16{1, 2, 3}},
 		},
 
 		{
@@ -63,7 +62,7 @@ func TestMarshalVariant(t *testing.T) {
 				// val
 				0x04, 0x28, 0x75, 0x75, 0x29, 0x00,
 			},
-			dbus.Variant{mustParseSignature("uu")},
+			Variant{mustParseSignature("uu")},
 		},
 
 		{
@@ -78,14 +77,14 @@ func TestMarshalVariant(t *testing.T) {
 				0x00, 0x00, // pad
 				0x00, 0x00, 0x00, 0x01, // B
 			},
-			dbus.Variant{struct {
+			Variant{struct {
 				Field0 int16
 				Field1 bool
 			}{2, true}},
 		},
 
 		{
-			dbus.Variant{uint16(42)},
+			Variant{uint16(42)},
 			[]byte{
 				// Signature string "v"
 				0x01, 0x76, 0x00,
@@ -94,38 +93,38 @@ func TestMarshalVariant(t *testing.T) {
 				// val
 				0x00, 0x2a,
 			},
-			dbus.Variant{dbus.Variant{uint16(42)}},
+			Variant{Variant{uint16(42)}},
 		},
 	}
 
 	for _, tc := range tests {
-		v := dbus.Variant{tc.in}
-		got, err := dbus.Marshal(context.Background(), v, fragments.BigEndian)
+		v := Variant{tc.in}
+		got, err := marshal(context.Background(), v, fragments.BigEndian)
 		if err != nil {
 			if len(tc.want) != 0 {
-				t.Errorf("Marshal(dbus.Variant{%T}) got err: %v", tc.in, err)
+				t.Errorf("Marshal(Variant{%T}) got err: %v", tc.in, err)
 			} else if testing.Verbose() {
-				t.Logf("Marshal(dbus.Variant{%T}) = err: %v", tc.in, err)
+				t.Logf("Marshal(Variant{%T}) = err: %v", tc.in, err)
 			}
 			continue
 		} else if len(tc.want) == 0 {
-			t.Errorf("Marshal(dbus.Variant{%T}) encoded successfully, want error", tc.in)
+			t.Errorf("Marshal(Variant{%T}) encoded successfully, want error", tc.in)
 			continue
 		} else if !bytes.Equal(got, tc.want) {
-			t.Errorf("Marshal(dbus.Variant{%T}) wrong encoding:\n  got: % x\n want: % x", tc.in, got, tc.want)
+			t.Errorf("Marshal(Variant{%T}) wrong encoding:\n  got: % x\n want: % x", tc.in, got, tc.want)
 		} else if testing.Verbose() {
-			t.Logf("Marshal(dbus.Variant{%T:%#v}) = % x", tc.in, tc.in, got)
+			t.Logf("Marshal(Variant{%T:%#v}) = % x", tc.in, tc.in, got)
 		}
 
 		if tc.wantUnmarshal == nil {
 			continue
 		}
-		var gotU dbus.Variant
-		err = dbus.Unmarshal(context.Background(), bytes.NewBuffer(got), fragments.BigEndian, &gotU)
+		var gotU Variant
+		err = unmarshal(context.Background(), bytes.NewBuffer(got), fragments.BigEndian, &gotU)
 		if err != nil {
-			t.Errorf("Unmarshal(Marshal(dbus.Variant{%T})) got err: %v", tc.in, err)
+			t.Errorf("Unmarshal(Marshal(Variant{%T})) got err: %v", tc.in, err)
 		}
-		if diff := cmp.Diff(gotU, tc.wantUnmarshal, cmp.Comparer(func(a, b dbus.Signature) bool {
+		if diff := cmp.Diff(gotU, tc.wantUnmarshal, cmp.Comparer(func(a, b Signature) bool {
 			return a.String() == b.String()
 		})); diff != "" {
 			t.Error(diff)
