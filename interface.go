@@ -51,10 +51,10 @@ func (f Interface) GetProperty(ctx context.Context, name string, val any, opts .
 	}
 
 	got := reflect.ValueOf(resp.Value)
-	if !got.Type().AssignableTo(want.Type()) {
+	if !got.Type().AssignableTo(want.Type().Elem()) {
 		return fmt.Errorf("property type %s is not assignable to %s", got.Type(), want.Type())
 	}
-	want.Set(got)
+	want.Elem().Set(got)
 
 	return nil
 }
