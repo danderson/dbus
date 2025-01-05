@@ -106,22 +106,6 @@ func (c *Conn) removeMatch(ctx context.Context, m *Match) error {
 	return c.bus.Call(ctx, "RemoveMatch", rule, nil)
 }
 
-// Not implemented:
-//  - StartServiceByName, deprecated in favor of auto-start.
-//  - UpdateActivationEnvironment, so locked down you can't really do
-//    much with it any more, and should really be leaving environment
-//    stuff to systemd anyway.
-//  - GetAdtAuditSessionData, Solaris-only and so weird even the spec
-//    doesn't know wtf it's for.
-//  - GetConnectionSELinuxSecurityContext, deprecated in favor
-//    of GetConnectionCredentials.
-//  - GetMachineID: who cares it's a single computer bus I don't care
-//    what the spec thinks
-//
-// TODO:
-//  - AddMatch/RemoveMatch: should be internal only, behind a nicer
-//    signals monitoring API.
-
 type NameOwnerChanged struct {
 	Name string
 	Prev *Peer
