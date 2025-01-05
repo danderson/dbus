@@ -97,6 +97,10 @@ func (c *Conn) Close() error {
 	return c.t.Close()
 }
 
+func (c *Conn) LocalName() string {
+	return c.clientID
+}
+
 func (c *Conn) Peer(name string) Peer {
 	return Peer{
 		c:    c,
