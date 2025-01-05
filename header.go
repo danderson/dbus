@@ -89,7 +89,8 @@ type header struct {
 	// ReplySerial is the message serial to which this message is
 	// replying. Required for msgTypeReturn and msgTypeError.
 	ReplySerial uint32 `dbus:"key=5"`
-	// Destination is the target for a message. Required for TODO.
+	// Destination is the target for a message. Optional for signals,
+	// required for everything else.
 	Destination string `dbus:"key=6"`
 	// Sender is the client ID of the message sender. The message
 	// bus populates this value itself, any sent value is ignored
