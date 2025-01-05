@@ -198,7 +198,13 @@ func (m *Match) Object(o ObjectPath) *Match {
 
 func (m *Match) ObjectPrefix(o ObjectPath) *Match {
 	m.object = value.Absent[ObjectPath]()
-	m.objectPrefix = value.Just(o.Clean())
+	if o == "/" {
+		// workaround for dbus-broker bug: / means the same as not
+		// specifying a path match anyway, so don't include it.
+		m.objectPrefix = value.Absent[ObjectPath]()
+	} else {
+		m.objectPrefix = value.Just(o.Clean())
+	}
 	return m
 }
 
