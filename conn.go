@@ -162,7 +162,6 @@ func (c *Conn) dispatchMsg() error {
 }
 
 func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, _ []*os.File) error {
-	// TODO: correct pairing of files and body
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
