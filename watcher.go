@@ -45,6 +45,25 @@ func newWatcher(c *Conn) *Watcher {
 	return ret
 }
 
+func (w *Watcher) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	select {
+	case <-w.pumpStopped:
+		return
+	default:
+	}
+
+	for m := range w.matches {
+		w.conn.removeMatch(context.Background(), m)
+	}
+
+	close(w.stopPump)
+	close(w.wakePump)
+	<-w.pumpStopped
+}
+
 func (w *Watcher) Chan() <-chan *Signal {
 	return w.signals
 }
@@ -71,6 +90,14 @@ func (w *Watcher) Match(m *Match) (remove func(), err error) {
 func (w *Watcher) deliver(sender Interface, hdr *header, body reflect.Value) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	select {
+	case <-w.pumpStopped:
+		// raced with a Close, this watcher is done.
+		return
+	default:
+	}
+
 	want := func() bool {
 		for m := range maps.Keys(w.matches) {
 			if m.matches(hdr, body) {
@@ -104,6 +131,7 @@ func (w *Watcher) deliver(sender Interface, hdr *header, body reflect.Value) {
 
 func (w *Watcher) pump() {
 	defer close(w.pumpStopped)
+	defer close(w.signals)
 	for {
 		sig := func() *Signal {
 			w.mu.Lock()

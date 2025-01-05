@@ -93,7 +93,16 @@ func (c *Conn) Watch() *Watcher {
 // Close closes the DBus connection. Any in-flight requests are
 // canceled, both outbound and inbound.
 func (c *Conn) Close() error {
-	// TODO: close out watchers
+	var ws mapset.Set[*Watcher]
+	{
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		ws = c.watchers
+		c.watchers = mapset.New[*Watcher]()
+	}
+	for w := range ws {
+		w.Close()
+	}
 	return c.t.Close()
 }
 
