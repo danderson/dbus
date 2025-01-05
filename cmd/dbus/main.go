@@ -57,6 +57,12 @@ func main() {
 				Help:  "Listen to bus signals",
 				Run:   command.Adapt(runListen),
 			},
+			{
+				Name:  "features",
+				Usage: "features",
+				Help:  "List the message bus's feature flags",
+				Run:   command.Adapt(runFeatures),
+			},
 
 			command.HelpCommand(nil),
 			command.VersionCommand(),
@@ -154,4 +160,22 @@ func runListen(env *command.Env) error {
 			}
 		}
 	}
+}
+
+func runFeatures(env *command.Env) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	features, err := conn.Features(env.Context())
+	if err != nil {
+		return fmt.Errorf("listing bus features: %w", err)
+	}
+	slices.Sort(features)
+	for _, f := range features {
+		fmt.Println(f)
+	}
+	return nil
 }
