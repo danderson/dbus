@@ -13,11 +13,12 @@ import (
 
 // A Signature describes the type of a DBus value.
 type Signature struct {
-	parts []reflect.Type
+	parts   []reflect.Type
+	msgBody bool
 }
 
 func mkSignature(parts ...reflect.Type) Signature {
-	return Signature{parts}
+	return Signature{parts, false}
 }
 
 // ParseSignature parses a DBus type signature string.
@@ -114,6 +115,10 @@ func parseOne(sig string, inArray bool) (reflect.Type, string, error) {
 	}
 }
 
+func (s Signature) asMsgBody() Signature {
+	return Signature{s.parts, true}
+}
+
 // String returns the string encoding of the Signature, as described
 // in the DBus specification.
 func (s Signature) String() string {
@@ -121,7 +126,13 @@ func (s Signature) String() string {
 	case 0:
 		return ""
 	case 1:
-		return stringForType(s.parts[0])
+		ret := stringForType(s.parts[0])
+		if s.msgBody && s.parts[0].Kind() == reflect.Struct {
+			// Strip outer parens off struct to turn it into a message
+			// payload signature.
+			ret = ret[1 : len(ret)-1]
+		}
+		return ret
 	default:
 		ret := make([]string, len(s.parts))
 		for i, p := range s.parts {

@@ -321,6 +321,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		if err != nil {
 			return err
 		}
+		sig = sig.asMsgBody()
 	}
 
 	hdr := header{
