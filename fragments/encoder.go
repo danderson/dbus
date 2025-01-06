@@ -18,17 +18,17 @@ type EncoderFunc func(ctx context.Context, enc *Encoder, val reflect.Value) erro
 type Encoder struct {
 	// Order is the byte order to use when encoding multi-byte values.
 	Order ByteOrder
-	// Mapper provides [EncoderFunc]s for types given to
-	// [Encoder.Value]. If mapper is nil, the Encoder functions
-	// normally except that [Encoder.Value] always returns an error.
+	// Mapper provides EncoderFuncs for types given to
+	// Encoder.Value. If mapper is nil, the Encoder functions normally
+	// except that Encoder.Value always returns an error.
 	Mapper func(reflect.Type) (EncoderFunc, error)
 	// Out is the encoded output.
 	Out []byte
 }
 
-// Pad inserts padding bytes as needed to make the message a multiple
-// of align bytes. If the message is already correctly aligned, no
-// padding is inserted.
+// Pad inserts padding bytes as needed to make the next write start at
+// a multiple of align bytes. If the message is already correctly
+// aligned, no padding is inserted.
 func (e *Encoder) Pad(align int) {
 	extra := len(e.Out) % align
 	if extra == 0 {
@@ -45,14 +45,14 @@ func (e *Encoder) Write(bs []byte) {
 	e.Out = append(e.Out, bs...)
 }
 
-// Bytes writes bs to the output.
+// Bytes writes a DBus byte array.
 func (e *Encoder) Bytes(bs []byte) {
 	e.Pad(4)
 	e.Uint32(uint32(len(bs)))
 	e.Out = append(e.Out, bs...)
 }
 
-// String writes s to the output.
+// String writes a DBus string.
 func (e *Encoder) String(s string) {
 	e.Pad(4)
 	e.Uint32(uint32(len(s)))
@@ -84,7 +84,7 @@ func (e *Encoder) Uint64(u64 uint64) {
 }
 
 // Value writes v to the output, using the [EncoderFunc] provided by
-// [Encoder.Mapper].
+// the encoder's Mapper.
 func (e *Encoder) Value(ctx context.Context, v any) error {
 	if e.Mapper == nil {
 		return errors.New("Mapper not provided to Encoder")

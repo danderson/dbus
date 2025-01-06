@@ -11,31 +11,27 @@ import (
 // A DecoderFunc reads a value into val.
 type DecoderFunc func(ctx context.Context, dec *Decoder, val reflect.Value) error
 
-// A Decoder provides utilities to read a DBus wire format message to
-// a byte slice.
+// A Decoder provides utilities to read a DBus wire format message
+// from an [io.Reader].
 //
 // Methods advance the read cursor as needed to account for the
 // padding required by DBus alignment rules, except for [Decoder.Read]
 // which reads bytes verbatim.
 type Decoder struct {
-	// Order is the byte order to use when reading multi-byte values.
+	// Order is the initial byte order to use when reading multi-byte
+	// values. It can be changed during decoding by
+	// [Decoder.ByteOrderFlag].
 	Order ByteOrder
-	// Mapper provides [DecoderFunc]s for types given to
-	// [Decoder.Value]. If mapper is nil, the Decoder functions
-	// normally except that [Decoder.Value] always returns an error.
+	// Mapper provides DecoderFuncs for types given to
+	// Decoder.Value. If mapper is nil, the Decoder functions
+	// normally except that Decoder.Value always returns an error.
 	Mapper func(reflect.Type) (DecoderFunc, error)
 	// In is the input stream to read.
 	In io.Reader
 
-	// offset is the number of bytes consumed off the front of In so
-	// far. We have to keep track of this because alignment depends on
-	// the global offset within the message, and cannot be derived
-	// from local context partway through decoding.
+	// Offset tracks the current alignment of Decoder.In, to compute
+	// appropriate padding.
 	offset int
-}
-
-func (d *Decoder) Discard(n int) error {
-	return nil
 }
 
 // Pad consumes padding bytes as needed to make the next read happen
@@ -73,7 +69,7 @@ func (d *Decoder) Bytes() ([]byte, error) {
 	return d.Read(int(ln))
 }
 
-// Bytes reads a DBus string.
+// String reads a DBus string.
 func (d *Decoder) String() (string, error) {
 	ln, err := d.Uint32()
 	if err != nil {
@@ -160,8 +156,8 @@ func (d *Decoder) Value(ctx context.Context, v any) error {
 // even if the array contains no elements.
 //
 // containsStructs only affects the size and alignment of the struct
-// header. When reading an array of structs, the caller must also call
-// [Decoder.Struct] to align with each array element correctly.
+// header. When reading an array of structs, the caller must also use
+// [Decoder.Struct] appropriately to align the reads of each element.
 func (d *Decoder) Array(containsStructs bool, readElement func(int) error) (int, error) {
 	ln, err := d.Uint32()
 	if err != nil {
@@ -204,8 +200,8 @@ func (d *Decoder) Struct(fields func() error) error {
 	return fields()
 }
 
-// ByteOrderFlag reads a DBus byte order flag byte, and sets
-// [Decoder.Order] to match it.
+// ByteOrderFlag reads a DBus byte order flag byte, and sets the
+// decoder's Order to match it.
 func (d *Decoder) ByteOrderFlag() error {
 	v, err := d.Uint8()
 	if err != nil {
