@@ -11,21 +11,83 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
-type NameRequestFlags byte
+// NameRequest is a request to take ownership of a DBus [Peer]
+// name. See [Conn.RequestName] for detailed behavior.
+type NameRequest struct {
+	// Name is the bus name to request.
+	Name string
+	// ReplaceCurrent is whether to attempt to replace the current
+	// primary owner of Name, if one exists. Replacement is only
+	// possible if the current primary owner requested the name with
+	// AllowReplacement set.
+	ReplaceCurrent bool
+	// NoQueue, if set, causes RequestName to return an error if
+	// primary ownership of Name cannot be granted.
+	NoQueue bool
+	// AllowReplacement is whether to allow the requestor to be
+	// replaced as primary owner, if another Peer requests the name
+	// with ReplaceCurrent set.
+	AllowReplacement bool
+}
 
-const (
-	NameRequestAllowReplacement NameRequestFlags = 1 << iota
-	NameRequestReplace
-	NameRequestNoQueue
-)
-
-func (c *Conn) RequestName(ctx context.Context, name string, flags NameRequestFlags, opts ...CallOption) (isPrimaryOwner bool, err error) {
+// RequestName asks the bus to assign an additional name to the Conn.
+//
+// A bus name has a single owner which receives DBus traffic for that
+// name, and a queue of "backup" owners that are willing to take over
+// should the current owner disconnect or abandon the name.
+//
+// If there are no other claims to the requested name, the Conn
+// becomes the name's owner, and RequestName returns (true, nil). The
+// options in [NameRequest] control behavior when there are multiple
+// claims to the requested name.
+//
+// By default, if the name already has an owner, RequestName adds Conn
+// to the queue of backup owners and returns (false, nil). The bus
+// will send the [NameAcquired] signal when Conn becomes the owner of
+// the name. If ownership is taken away, the bus indicates this with
+// the [NameLost] signal and places Conn back in the queue of backup
+// owners.
+//
+// [NameRequest.NoQueue] indicates that Conn should never join the
+// backup queue for a name. RequestName returns an error if it cannot
+// immediately become the owner. If ownership is later lost, the bus
+// indicates this with the [NameLost] signal and forgets that Conn
+// made any claim to the name until it requests it anew.
+//
+// If [NameRequest.ReplaceCurrent] is set, RequestName attempts to
+// skip the queue and forcibly take ownership of the name from its
+// current owner. The current owner must have set
+// [NameRequest.AllowReplacement] in its own request, otherwise the
+// name request is handled as if ReplaceCurrent wasn't set.
+//
+// [NameRequest.AllowReplacement] controls whether another client
+// using [NameRequest.ReplaceCurrent] can take ownership away from
+// this Conn. If set, the caller should watch the [NameLost] signal to
+// detect loss of ownership.
+//
+// When Conn is the current owner, RequestName can be used to update
+// the desired values for [NameRequest.AllowReplacement] and
+// [NameRequest.NoQueue] settings. Changing these values may result in
+// loss of ownership.
+func (c *Conn) RequestName(ctx context.Context, req NameRequest, opts ...CallOption) (isPrimaryOwner bool, err error) {
 	var resp uint32
-	req := struct {
+	r := struct {
 		Name  string
 		Flags uint32
-	}{name, uint32(flags)}
-	if err := c.bus.Call(ctx, "RequestName", req, &resp, opts...); err != nil {
+	}{
+		Name: req.Name,
+	}
+	if req.AllowReplacement {
+		r.Flags |= 0x1
+	}
+	if req.ReplaceCurrent {
+		r.Flags |= 0x2
+	}
+	if req.NoQueue {
+		r.Flags |= 0x4
+	}
+
+	if err := c.bus.Call(ctx, "RequestName", r, &resp, opts...); err != nil {
 		return false, err
 	}
 	switch resp {
