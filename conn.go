@@ -243,7 +243,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 
 	sender, _ := ContextSender(ctx)
 
-	var signal reflect.Value
+	signal := reflect.ValueOf(nil)
 	if signalType != nil {
 		signal = reflect.New(signalType)
 		if err := unmarshal(ctx, body, hdr.Order.Order(), signal.Interface()); err != nil {
