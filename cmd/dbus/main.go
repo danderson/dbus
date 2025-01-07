@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log"
 	"maps"
 	"os"
 	"os/signal"
@@ -69,6 +70,12 @@ func main() {
 				Usage: "introspect peer object-path",
 				Help:  "Dump the API description for an object",
 				Run:   command.Adapt(runIntrospect),
+			},
+			{
+				Name:  "claim",
+				Usage: "claim bus-name",
+				Help:  "Claim ownership of a bus name",
+				Run:   command.Adapt(runClaim),
 			},
 
 			command.HelpCommand(nil),
@@ -201,4 +208,32 @@ func runIntrospect(env *command.Env, peer, path string) error {
 	pretty.Print(desc)
 
 	return nil
+}
+
+func runClaim(env *command.Env, name string) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	claim, err := conn.Claim(name, dbus.ClaimOptions{})
+	if err != nil {
+		return fmt.Errorf("Claiming name: %w", err)
+	}
+	defer claim.Close()
+
+	for {
+		select {
+		case <-env.Context().Done():
+			log.Println("shutdown")
+			return nil
+		case owner := <-claim.Chan():
+			if owner {
+				fmt.Println("Became owner of ", name)
+			} else {
+				fmt.Println("Lost ownership of ", name)
+			}
+		}
+	}
 }

@@ -115,31 +115,25 @@ func (m *Match) matches(hdr *header, body reflect.Value) bool {
 		return false
 	}
 
-	// Avoid taking a reflect.Value if we don't need to.
-	if len(m.argStr) == 0 && len(m.argPath) == 0 && !m.arg0NS.Present() {
-		return true
-	}
-
-	v := reflect.ValueOf(body)
 	for i, want := range m.argStr {
-		if got := sm.stringFields[i](v); got != want {
+		if got := sm.stringFields[i](body.Elem()); got != want {
 			return false
 		}
 	}
 	for i, want := range m.argPath {
 		if f := sm.stringFields[i]; f != nil {
-			if got := f(v); got != want.String() && !ObjectPath(got).IsChildOf(want) {
+			if got := f(body.Elem()); got != want.String() && !ObjectPath(got).IsChildOf(want) {
 				return false
 			}
 		}
 		if f := sm.objectFields[i]; f != nil {
-			if got := f(v); got != want && !got.IsChildOf(want) {
+			if got := f(body.Elem()); got != want && !got.IsChildOf(want) {
 				return false
 			}
 		}
 	}
 	if n, ok := m.arg0NS.GetOK(); ok {
-		if got := sm.stringFields[0](v); got != n && !strings.HasPrefix(got, n+".") {
+		if got := sm.stringFields[0](body.Elem()); got != n && !strings.HasPrefix(got, n+".") {
 			return false
 		}
 	}
@@ -171,11 +165,11 @@ func (m *Match) Signal(v any) *Match {
 		for i, field := range inf.StructFields {
 			if field.Type == reflect.TypeFor[ObjectPath]() {
 				sm.objectFields[i] = func(v reflect.Value) ObjectPath {
-					return v.Interface().(ObjectPath)
+					return field.GetWithZero(v).Interface().(ObjectPath)
 				}
 			} else if field.Type.Kind() == reflect.String {
 				sm.stringFields[i] = func(v reflect.Value) string {
-					return v.String()
+					return field.GetWithZero(v).String()
 				}
 			}
 		}

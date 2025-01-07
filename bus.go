@@ -3,118 +3,173 @@ package dbus
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log"
 	"maps"
 
 	"github.com/creachadair/mds/mapset"
 	"github.com/danderson/dbus/fragments"
 )
 
-// NameRequest is a request to take ownership of a DBus [Peer]
-// name. See [Conn.RequestName] for detailed behavior.
-type NameRequest struct {
-	// Name is the bus name to request.
-	Name string
-	// ReplaceCurrent is whether to attempt to replace the current
-	// primary owner of Name, if one exists. Replacement is only
-	// possible if the current primary owner requested the name with
-	// AllowReplacement set.
-	ReplaceCurrent bool
-	// NoQueue, if set, causes RequestName to return an error if
-	// primary ownership of Name cannot be granted.
-	NoQueue bool
-	// AllowReplacement is whether to allow the requestor to be
-	// replaced as primary owner, if another Peer requests the name
-	// with ReplaceCurrent set.
+// ClaimOptions are the options for a [Claim] to a bus name.
+type ClaimOptions struct {
+	// AllowReplacement is whether to allow another request that sets
+	// TryReplace to take over ownership from this claim.
 	AllowReplacement bool
+	// TryReplace is whether to attempt to replace the current owner
+	// of Name, if the name already has an owner.
+	//
+	// Replacement is only permitted if the current primary owner
+	// requested the name with AllowReplacement set. Otherwise, the
+	// request for ownership joins the backup queue or returns an
+	// error, depending on the NoQueue setting.
+	//
+	// Note that TryReplace only takes effect at the moment the
+	// request is made. If the attempt fails and this claim joins the
+	// backup queue, and later on the owner changes its settings to
+	// allow replacement, this queued claim must explicitly repeat its
+	// request with TryReplace set to take advantage of it.
+	TryReplace bool
+	// NoQueue, if set, causes this claim to never join the backup
+	// queue for any reason.
+	//
+	// If ownership of the name cannot be secured when the Claim is
+	// created, creation fails with an error.
+	//
+	// If ownership is secured and a later event causes loss of
+	// ownership (such as this claim setting AllowReplacement, and
+	// another client making a claim with TryReplace), the claim
+	// becomes inactive until a new request is explicitly made with
+	// Claim.Request.
+	NoQueue bool
 }
 
-// RequestName asks the bus to assign an additional name to the Conn.
+// Claim is a claim to ownership of a bus name.
 //
-// A bus name has a single owner which receives DBus traffic for that
-// name, and a queue of "backup" owners that are willing to take over
-// should the current owner disconnect or abandon the name.
+// Multiple DBus clients may claim ownership of the same name. The bus
+// tracks a single current owner, as well as a queue of other
+// claimants that are eligible to succeed the current owner.
 //
-// If there are no other claims to the requested name, the Conn
-// becomes the name's owner, and RequestName returns (true, nil). The
-// options in [NameRequest] control behavior when there are multiple
-// claims to the requested name.
+// The exact interaction of multiple different claims to a name
+// depends on the [ClaimOptions] set by each claimant.
+type Claim struct {
+	c     *Conn
+	w     *Watcher
+	owner chan bool
+	name  string
+
+	pumpStopped chan struct{}
+
+	last bool
+	opts ClaimOptions
+}
+
+func newClaim(c *Conn, name string, opts ClaimOptions) (*Claim, error) {
+	ret := &Claim{
+		c:           c,
+		w:           c.Watch(),
+		owner:       make(chan bool, 1),
+		name:        name,
+		pumpStopped: make(chan struct{}),
+		last:        false,
+	}
+	ret.w.Match(NewMatch().Signal(NameAcquired{}).ArgStr(0, name))
+	ret.w.Match(NewMatch().Signal(NameLost{}).ArgStr(0, name))
+
+	if err := ret.Request(opts); err != nil {
+		ret.w.Close()
+		return nil, err
+	}
+
+	go ret.pump()
+
+	return ret, nil
+}
+
+// Request makes a new request to the bus for the claimed name.
 //
-// By default, if the name already has an owner, RequestName adds Conn
-// to the queue of backup owners and returns (false, nil). The bus
-// will send the [NameAcquired] signal when Conn becomes the owner of
-// the name. If ownership is taken away, the bus indicates this with
-// the [NameLost] signal and places Conn back in the queue of backup
-// owners.
+// If this Claim is the current owner, Request updates the
+// AllowReplacement and NoQueue settings without relinquishing
+// ownership (although setting AllowReplacement may enable another
+// client to take over the claim).
 //
-// [NameRequest.NoQueue] indicates that Conn should never join the
-// backup queue for a name. RequestName returns an error if it cannot
-// immediately become the owner. If ownership is later lost, the bus
-// indicates this with the [NameLost] signal and forgets that Conn
-// made any claim to the name until it requests it anew.
-//
-// If [NameRequest.ReplaceCurrent] is set, RequestName attempts to
-// skip the queue and forcibly take ownership of the name from its
-// current owner. The current owner must have set
-// [NameRequest.AllowReplacement] in its own request, otherwise the
-// name request is handled as if ReplaceCurrent wasn't set.
-//
-// [NameRequest.AllowReplacement] controls whether another client
-// using [NameRequest.ReplaceCurrent] can take ownership away from
-// this Conn. If set, the caller should watch the [NameLost] signal to
-// detect loss of ownership.
-//
-// When Conn is the current owner, RequestName can be used to update
-// the desired values for [NameRequest.AllowReplacement] and
-// [NameRequest.NoQueue] settings. Changing these values may result in
-// loss of ownership.
-func (c *Conn) RequestName(ctx context.Context, req NameRequest, opts ...CallOption) (isPrimaryOwner bool, err error) {
-	var resp uint32
-	r := struct {
+// If this claim is not the current owner, the bus considers this
+// claim anew with the updated [ClaimOptions], as if this client were
+// making a claim for the first time.
+func (c *Claim) Request(opts ClaimOptions) error {
+	c.opts = opts
+
+	var req struct {
 		Name  string
 		Flags uint32
-	}{
-		Name: req.Name,
 	}
-	if req.AllowReplacement {
-		r.Flags |= 0x1
+	req.Name = c.name
+	if c.opts.AllowReplacement {
+		req.Flags |= 0x1
 	}
-	if req.ReplaceCurrent {
-		r.Flags |= 0x2
+	if c.opts.TryReplace {
+		req.Flags |= 0x2
 	}
-	if req.NoQueue {
-		r.Flags |= 0x4
+	if c.opts.NoQueue {
+		req.Flags |= 0x4
 	}
 
-	if err := c.bus.Call(ctx, "RequestName", r, &resp, opts...); err != nil {
-		return false, err
-	}
-	switch resp {
-	case 1:
-		// Became primary owner.
-		return true, nil
-	case 2:
-		// Placed in queue, but not primary.
-		return false, nil
-	case 3:
-		// Couldn't become primary owner, and request flags asked to
-		// not queue.
-		return false, errors.New("requested name not available")
-	case 4:
-		// Already the primary owner.
-		return true, nil
+	var resp uint32
+	return c.c.bus.Call(context.Background(), "RequestName", req, &resp)
+}
+
+// Close abandons the claim.
+//
+// If the claim is the current owner of the bus name, ownership is
+// lost and may be passed on to another claimant.
+func (c *Claim) Close() error {
+	select {
+	case <-c.pumpStopped:
+		return nil
 	default:
-		return false, fmt.Errorf("unknown response code %d to RequestName", resp)
+	}
+
+	c.w.Close()
+	<-c.pumpStopped
+
+	// One final send to report loss of ownership, before closing the
+	// chan
+	c.send(false)
+	close(c.owner)
+
+	var ignore uint32
+	return c.c.bus.Call(context.Background(), "ReleaseName", c.name, &ignore)
+}
+
+// Chan returns a channel that reports whether this claim is the
+// current owner of the bus name.
+func (c *Claim) Chan() <-chan bool { return c.owner }
+
+func (c *Claim) send(isOwner bool) {
+	select {
+	case c.owner <- isOwner:
+	case <-c.owner:
+		c.owner <- isOwner
 	}
 }
 
-func (c *Conn) ReleaseName(ctx context.Context, name string, opts ...CallOption) error {
-	var ignore uint32
-	if err := c.bus.Call(ctx, "ReleaseName", name, &ignore, opts...); err != nil {
-		return err
+func (c *Claim) pump() {
+	defer close(c.pumpStopped)
+	for sig := range c.w.Chan() {
+		switch v := sig.Body.(type) {
+		case *NameAcquired:
+			if v.Name != c.name {
+				continue
+			}
+			c.last = true
+		case *NameLost:
+			if v.Name != c.name {
+				continue
+			}
+			c.last = false
+		default:
+			panic("unexpected signal")
+		}
+		c.send(c.last)
 	}
-	return nil
 }
 
 func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
@@ -159,7 +214,6 @@ func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, erro
 
 func (c *Conn) addMatch(ctx context.Context, m *Match) error {
 	rule := m.filterString()
-	log.Println(m, rule)
 	return c.bus.Call(ctx, "AddMatch", rule, nil)
 }
 

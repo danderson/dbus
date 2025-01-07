@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"reflect"
@@ -70,9 +71,11 @@ type Conn struct {
 	bus Interface
 
 	mu         sync.Mutex
+	closed     bool
 	calls      map[uint32]*pendingCall
 	lastSerial uint32
 	watchers   mapset.Set[*Watcher]
+	claims     mapset.Set[*Claim]
 }
 
 type pendingCall struct {
@@ -90,18 +93,42 @@ func (c *Conn) Watch() *Watcher {
 	return w
 }
 
+func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
+	ret, err := newClaim(c, name, opts)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.claims.Add(ret)
+	return ret, nil
+}
+
 // Close closes the DBus connection. Any in-flight requests are
 // canceled, both outbound and inbound.
 func (c *Conn) Close() error {
-	var ws mapset.Set[*Watcher]
+	var (
+		pend map[uint32]*pendingCall
+		ws   mapset.Set[*Watcher]
+		cs   mapset.Set[*Claim]
+	)
 	{
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		ws = c.watchers
-		c.watchers = mapset.New[*Watcher]()
+		c.closed = true
+		pend, c.calls = c.calls, nil
+		ws, c.watchers = c.watchers, nil
+		cs, c.claims = c.claims, nil
+	}
+	for c := range maps.Values(pend) {
+		c.err = net.ErrClosed
+		close(c.notify)
 	}
 	for w := range ws {
 		w.Close()
+	}
+	for c := range cs {
+		c.Close()
 	}
 	return c.t.Close()
 }
@@ -243,7 +270,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 
 	sender, _ := ContextSender(ctx)
 
-	signal := reflect.ValueOf(nil)
+	var signal reflect.Value
 	if signalType != nil {
 		signal = reflect.New(signalType)
 		if err := unmarshal(ctx, body, hdr.Order.Order(), signal.Interface()); err != nil {
@@ -297,6 +324,10 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	serial, pending := func() (uint32, *pendingCall) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		if c.closed {
+			return 0, nil
+		}
+
 		c.lastSerial++
 		pend := &pendingCall{
 			notify: make(chan struct{}, 1),
@@ -305,6 +336,9 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		c.calls[c.lastSerial] = pend
 		return c.lastSerial, pend
 	}()
+	if pending == nil {
+		return net.ErrClosed
+	}
 	defer func() {
 		c.mu.Lock()
 		defer c.mu.Unlock()

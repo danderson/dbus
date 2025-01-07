@@ -46,22 +46,22 @@ func newWatcher(c *Conn) *Watcher {
 }
 
 func (w *Watcher) Close() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	select {
 	case <-w.pumpStopped:
 		return
 	default:
 	}
 
-	for m := range w.matches {
-		w.conn.removeMatch(context.Background(), m)
-	}
-
 	close(w.stopPump)
 	close(w.wakePump)
 	<-w.pumpStopped
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for m := range w.matches {
+		w.conn.removeMatch(context.Background(), m)
+	}
+	w.queue.Clear()
 }
 
 func (w *Watcher) Chan() <-chan *Signal {
