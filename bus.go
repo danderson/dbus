@@ -9,6 +9,25 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
+// Claim creates a [Claim] for ownership of a bus name.
+//
+// Bus names may have multiple claims by different clients, in which
+// case behavior is determined by the [ClaimOptions] set by each
+// claimant.
+//
+// Callers should monitor [Claim.Chan] to find out if and when the
+// name gets assigned to them.
+func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
+	ret, err := newClaim(c, name, opts)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.claims.Add(ret)
+	return ret, nil
+}
+
 // ClaimOptions are the options for a [Claim] to a bus name.
 type ClaimOptions struct {
 	// AllowReplacement is whether to allow another request that sets
@@ -172,6 +191,7 @@ func (c *Claim) pump() {
 	}
 }
 
+// Peers returns a list of peers currently connected to the bus.
 func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
 	var names []string
 	if err := c.bus.Call(ctx, "ListNames", nil, &names, opts...); err != nil {
@@ -184,6 +204,10 @@ func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
 	return ret, nil
 }
 
+// ActivatablePeers returns a list of activatable peers.
+//
+// An activatable [Peer] is started automatically when a request is
+// sent to it, and may shut down when idle.
 func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
 	var names []string
 	if err := c.bus.Call(ctx, "ListActivatableNames", nil, &names, opts...); err != nil {
@@ -196,6 +220,8 @@ func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer
 	return ret, nil
 }
 
+// BusID returns the unique globally unique ID of the bus to which the
+// Conn is connected.
 func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
 	var id string
 	if err := c.bus.Call(ctx, "GetId", nil, &id, opts...); err != nil {
@@ -204,6 +230,8 @@ func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
 	return id, nil
 }
 
+// Features returns a list of strings describing the optional features
+// that the bus supports.
 func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, error) {
 	var features []string
 	if err := c.bus.GetProperty(ctx, "Features", &features, opts...); err != nil {
@@ -222,10 +250,15 @@ func (c *Conn) removeMatch(ctx context.Context, m *Match) error {
 	return c.bus.Call(ctx, "RemoveMatch", rule, nil)
 }
 
+// NameOwnerChanged signals that a name has changed owners.
 type NameOwnerChanged struct {
+	// Name is the bus name whose ownership has changed.
 	Name string
+	// Prev is the previous owner of Name, or nil if Name has just
+	// been created.
 	Prev *Peer
-	New  *Peer
+	// New is the current owner of Name, or nil if Name is defunct.
+	New *Peer
 }
 
 func (s *NameOwnerChanged) IsDBusStruct() bool { return true }
@@ -258,19 +291,33 @@ func (s *NameOwnerChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decod
 	return nil
 }
 
+// NameLost signals to the receiving client that it has lost ownership
+// of a bus name.
 type NameLost struct {
 	Name string
 }
 
+// NameAcquired signals to the receiving client that it has gained
+// ownership of a bus name.
 type NameAcquired struct {
 	Name string
 }
 
+// ActivatableServicesChanged signals that the list of activatable
+// peers has changed. Use [Conn.ActivatablePeers] to obtain an updated
+// list.
 type ActivatableServicesChanged struct{}
 
+// PropertiesChanged signals that some of the sender's properties have
+// changed.
 type PropertiesChanged struct {
-	Interface   Interface
-	Changed     map[string]any
+	// Interface is the DBus interface whose properties have changed.
+	Interface Interface
+	// Changed lists changed property values, keyed by property name.
+	Changed map[string]any
+	// Invalidated lists the names of properties that have changed,
+	// but whose updated value was not broadcast. If desired,
+	// [Interface.GetProperty] may be used to read the updated value.
 	Invalidated mapset.Set[string]
 }
 
@@ -303,6 +350,8 @@ func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Deco
 	return nil
 }
 
+// InterfacesAdded signals that an object is offering new interfaces
+// for use.
 type InterfacesAdded struct {
 	Object     Object
 	Interfaces []Interface
@@ -336,6 +385,8 @@ func (s *InterfacesAdded) UnmarshalDBus(ctx context.Context, d *fragments.Decode
 	return nil
 }
 
+// InterfacesAdded signals that an object has ceased to offer one or
+// more interfaces for use.
 type InterfacesRemoved struct {
 	Object     Object
 	Interfaces []Interface

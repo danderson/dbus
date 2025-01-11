@@ -85,25 +85,6 @@ type pendingCall struct {
 	err    error
 }
 
-func (c *Conn) Watch() *Watcher {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	w := newWatcher(c)
-	c.watchers.Add(w)
-	return w
-}
-
-func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
-	ret, err := newClaim(c, name, opts)
-	if err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.claims.Add(ret)
-	return ret, nil
-}
-
 // Close closes the DBus connection. Any in-flight requests are
 // canceled, both outbound and inbound.
 func (c *Conn) Close() error {

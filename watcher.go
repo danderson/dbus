@@ -12,6 +12,20 @@ import (
 
 const maxWatcherQueue = 20
 
+// Watch watches the bus for signals from other bus participants.
+//
+// The caller must use [Watcher.Match] to specify the signals to be
+// delivered to the Watcher.
+func (c *Conn) Watch() *Watcher {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	w := newWatcher(c)
+	c.watchers.Add(w)
+	return w
+}
+
+// A Watcher delivers signals received from the bus that match a given
+// set of filters.
 type Watcher struct {
 	conn     *Conn
 	signals  chan *Signal
@@ -25,10 +39,20 @@ type Watcher struct {
 	matches mapset.Set[*Match]
 }
 
+// Signal is a signal received from a bus peer.
 type Signal struct {
-	Sender   Interface
-	Name     string
-	Body     any
+	// Sender is the interface that emitted the signal.
+	Sender Interface
+	// Name is the name of the signal.
+	Name string
+	// Body is the signal payload. It is a pointer to the struct type
+	// that was associated with the signal using RegisterSignalType(),
+	// or a pointer to an anonymous struct for signals with no
+	// registered payload type.
+	Body any
+	// Overflow reports that the watcher discarded some signals that
+	// followed this one, due to the caller not processing delivered
+	// signals fast enough.
 	Overflow bool
 }
 
@@ -45,6 +69,7 @@ func newWatcher(c *Conn) *Watcher {
 	return ret
 }
 
+// Close shuts down the Watcher.
 func (w *Watcher) Close() {
 	select {
 	case <-w.pumpStopped:
@@ -64,10 +89,25 @@ func (w *Watcher) Close() {
 	w.queue.Clear()
 }
 
+// Chan returns the channel on which signals are delivered.
+//
+// The caller must drain this channel of new signals promptly, to
+// avoid overflowing the Watcher's receive queue and losing Signals of
+// interest. Missing signals due to an overflow are indicated by the
+// Overflow field of the [Signal] that immediately precedes the
+// discarded signal(s).
 func (w *Watcher) Chan() <-chan *Signal {
 	return w.signals
 }
 
+// Match requests delivery of signals that match the specification m.
+//
+// Matches are additive: a signal is delivered if it matches any of
+// the Watcher's match specifications.
+//
+// If the match is added successfully, the returned remove function
+// may optionally be used to remove that one match without affecting
+// any others.
 func (w *Watcher) Match(m *Match) (remove func(), err error) {
 	// Prevent later thread-unsafe mutation
 	m = m.clone()
