@@ -383,6 +383,10 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		}
 	}
 
+	if !hdr.WantReply() {
+		return nil
+	}
+
 	select {
 	case <-pending.notify:
 		return pending.err
