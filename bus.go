@@ -251,6 +251,8 @@ func (c *Conn) removeMatch(ctx context.Context, m *Match) error {
 }
 
 // NameOwnerChanged signals that a name has changed owners.
+//
+// It corresponds to the org.freedesktop.DBus.NameOwnerChanged signal.
 type NameOwnerChanged struct {
 	// Name is the bus name whose ownership has changed.
 	Name string
@@ -293,12 +295,17 @@ func (s *NameOwnerChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decod
 
 // NameLost signals to the receiving client that it has lost ownership
 // of a bus name.
+//
+// It corresponds to the org.freedesktop.DBus.NameLost signal.
 type NameLost struct {
 	Name string
 }
 
 // NameAcquired signals to the receiving client that it has gained
 // ownership of a bus name.
+//
+// It corresponds to the org.freedesktop.DBus.NameAcquired
+// signal.
 type NameAcquired struct {
 	Name string
 }
@@ -306,10 +313,16 @@ type NameAcquired struct {
 // ActivatableServicesChanged signals that the list of activatable
 // peers has changed. Use [Conn.ActivatablePeers] to obtain an updated
 // list.
+//
+// It corresponds to the
+// org.freedesktop.DBus.ActivatableServicesChanged signal.
 type ActivatableServicesChanged struct{}
 
 // PropertiesChanged signals that some of the sender's properties have
 // changed.
+//
+// It corresponds to the
+// org.freedesktop.DBus.Properties.PropertiesChanged signal.
 type PropertiesChanged struct {
 	// Interface is the DBus interface whose properties have changed.
 	Interface Interface
@@ -352,6 +365,9 @@ func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Deco
 
 // InterfacesAdded signals that an object is offering new interfaces
 // for use.
+//
+// It corresponds to the
+// org.freedesktop.DBus.ObjectManager.InterfacesAdded signal.
 type InterfacesAdded struct {
 	Object     Object
 	Interfaces []Interface
@@ -387,6 +403,9 @@ func (s *InterfacesAdded) UnmarshalDBus(ctx context.Context, d *fragments.Decode
 
 // InterfacesAdded signals that an object has ceased to offer one or
 // more interfaces for use.
+//
+// It corresponds to the
+// org.freedesktop.DBus.ObjectManager.InterfacesRemoved signal.
 type InterfacesRemoved struct {
 	Object     Object
 	Interfaces []Interface
