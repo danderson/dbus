@@ -9,6 +9,8 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
+// An ObjectPath is a filesystem-like path for an [Object] exposed on
+// over DBus.
 type ObjectPath string
 
 func (p ObjectPath) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
@@ -31,6 +33,8 @@ var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath](), "o")
 
 func (p ObjectPath) SignatureDBus() Signature { return objectPathSignature }
 
+// Clean returns the result of applying [path.Clean] to the object
+// path.
 func (p ObjectPath) Clean() ObjectPath {
 	return ObjectPath(path.Clean(string(p)))
 }
@@ -39,10 +43,12 @@ func (p ObjectPath) String() string {
 	return string(p.Clean())
 }
 
+// Valid reports whether p is a valid object path.
 func (p ObjectPath) Valid() bool {
 	return path.IsAbs(string(p.Clean()))
 }
 
+// IsChildOf reports whether p is a child of the given parent.
 func (p ObjectPath) IsChildOf(parent ObjectPath) bool {
 	sparent := string(parent.Clean())
 	sp := string(p.Clean())

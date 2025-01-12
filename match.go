@@ -11,6 +11,7 @@ import (
 	"github.com/creachadair/mds/value"
 )
 
+// Match is a filter that matches DBus signals.
 type Match struct {
 	sender       value.Maybe[string]
 	object       value.Maybe[ObjectPath]
@@ -28,10 +29,12 @@ type signalMatch struct {
 	member       string
 }
 
+// NewMatch returns a new Match that matches all signals.
 func NewMatch() *Match {
 	return &Match{}
 }
 
+// valid reports whether the match is structurally valid.
 func (m *Match) valid() error {
 	if len(m.argStr) == 0 && len(m.argPath) == 0 && !m.arg0NS.Present() {
 		return nil
@@ -59,6 +62,8 @@ func (m *Match) valid() error {
 	return nil
 }
 
+// filterString returns the match in the string format that DBus wants
+// for the AddMatch and RemoveMatch methods.
 func (m *Match) filterString() string {
 	ms := []string{"type='signal'"}
 	kv := func(k string, v string) {
@@ -93,6 +98,7 @@ func (m *Match) filterString() string {
 	return strings.Join(ms, ",")
 }
 
+// clone makes a deep copy of m.
 func (m *Match) clone() *Match {
 	ret := *m
 	ret.argStr = maps.Clone(m.argStr)
@@ -100,6 +106,14 @@ func (m *Match) clone() *Match {
 	return &ret
 }
 
+// matches reports whether the given signal header and body matches
+// the filter, using the same match logic that the bus uses on the
+// match's filterString().
+//
+// This is necessary because a DBus connection receives a single
+// stream of signals. When multiple Watchers are active, the received
+// signals are the union of all the Watchers' filters, and so each one
+// needs to do additional filtering on received signals.
 func (m *Match) matches(hdr *header, body reflect.Value) bool {
 	if s, ok := m.sender.GetOK(); ok && hdr.Sender != s {
 		return false
@@ -141,11 +155,15 @@ func (m *Match) matches(hdr *header, body reflect.Value) bool {
 	return true
 }
 
-func (m *Match) Signal(v any) *Match {
-	t := reflect.TypeOf(v)
+// Signal restricts the Match to the given signal.
+//
+// The provided signal must be a signal body struct that has been
+// registered with [RegisterSignalType].
+func (m *Match) Signal(signal any) *Match {
+	t := reflect.TypeOf(signal)
 	k := signalTypeToName[t]
 	if k.Interface == "" || k.Signal == "" {
-		panic(fmt.Errorf("unknown signal type %T", v))
+		panic(fmt.Errorf("unknown signal type %T", signal))
 	}
 
 	sm := signalMatch{
@@ -179,17 +197,25 @@ func (m *Match) Signal(v any) *Match {
 	return m
 }
 
-func (m *Match) Sender(s string) *Match {
-	m.sender = value.Just(s)
+// Sender restricts the Match to a single sending Peer.
+func (m *Match) Peer(p Peer) *Match {
+	m.sender = value.Just(p.Name())
 	return m
 }
 
-func (m *Match) Object(o ObjectPath) *Match {
+// Object restricts the match to a single sending Object.
+func (m *Match) Object(o Object) *Match {
 	m.objectPrefix = value.Absent[ObjectPath]()
-	m.object = value.Just(o.Clean())
+	m.object = value.Just(o.Path().Clean())
 	return m
 }
 
+// ObjectPrefix restricts the Match to the Objects rooted at the given
+// path prefix.
+//
+// For example, ObjectPrefix("/mascots/gopher") matches signals
+// emitted by /mascots/gopher, /mascots/gopher/plushie,
+// /mascots/gopher/art/renee-french, but not /mascots/glenda.
 func (m *Match) ObjectPrefix(o ObjectPath) *Match {
 	m.object = value.Absent[ObjectPath]()
 	if o == "/" {
@@ -202,6 +228,11 @@ func (m *Match) ObjectPrefix(o ObjectPath) *Match {
 	return m
 }
 
+// ArgStr restricts the Match to signals whose i-th body field is a
+// string equal to val.
+//
+// To use ArgStr, the Match must also be restricted to a single signal
+// type with [Match.Signal].
 func (m *Match) ArgStr(i int, val string) *Match {
 	if m.argStr == nil {
 		m.argStr = map[int]string{}
@@ -210,6 +241,11 @@ func (m *Match) ArgStr(i int, val string) *Match {
 	return m
 }
 
+// ArgPathPrefix restricts the Match to signals whose i-th body field
+// is an object path with the given prefix.
+//
+// To use ArgPathPrefix, the Match must also be restricted to a single
+// signal type with [Match.Signal].
 func (m *Match) ArgPathPrefix(i int, val ObjectPath) *Match {
 	if m.argPath == nil {
 		m.argPath = map[int]ObjectPath{}
@@ -218,6 +254,11 @@ func (m *Match) ArgPathPrefix(i int, val ObjectPath) *Match {
 	return m
 }
 
+// Arg0Namespace restricts the Match to signals whose first body field
+// is a peer or interface name with the given dot-separated prefix.
+//
+// To use Arg0Namespace, the Match must also be restricted to a single
+// signal type with [Match.Signal].
 func (m *Match) Arg0Namespace(val string) *Match {
 	m.arg0NS = value.Just(val)
 	return m

@@ -76,6 +76,7 @@ type Conn struct {
 	lastSerial uint32
 	watchers   mapset.Set[*Watcher]
 	claims     mapset.Set[*Claim]
+	handlers   map[string]handlerFunc
 }
 
 type pendingCall struct {
@@ -85,8 +86,7 @@ type pendingCall struct {
 	err    error
 }
 
-// Close closes the DBus connection. Any in-flight requests are
-// canceled, both outbound and inbound.
+// Close closes the DBus connection.
 func (c *Conn) Close() error {
 	var (
 		pend map[uint32]*pendingCall
@@ -114,10 +114,15 @@ func (c *Conn) Close() error {
 	return c.t.Close()
 }
 
+// LocalName returns the connection's unique bus name.
 func (c *Conn) LocalName() string {
 	return c.clientID
 }
 
+// Peer returns a Peer for the given bus name.
+//
+// The returned value is a purely local handle. It does not indicate
+// that the requested peer exists, or that it is currently reachable.
 func (c *Conn) Peer(name string) Peer {
 	return Peer{
 		c:    c,
@@ -270,6 +275,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 	return nil
 }
 
+// CallOption is a generic option for a DBus method call.
 type CallOption interface {
 	callOptionValue() byte
 }
@@ -280,19 +286,26 @@ func (o callOption) callOptionValue() byte {
 	return byte(o)
 }
 
+// NoReply indicates that the method call is one-way, and that the
+// recipient must not generate a response message.
 func NoReply() CallOption {
 	return callOption(1)
 }
 
+// NoAutoStart indicates that the recipient should not be autostarted
+// if it's not already running.
 func NoAutoStart() CallOption {
 	return callOption(2)
 }
 
+// AllowInteraction indicates that the caller is willing to wait an
+// extended amount of time for the method call to be interactively
+// authorized by the user.
 func AllowInteraction() CallOption {
 	return callOption(4)
 }
 
-// Call calls a remote method over the bus and records the response in
+// call calls a remote method over the bus and records the response in
 // the provided pointer.
 //
 // It is the caller's responsibility to supply the correct types of

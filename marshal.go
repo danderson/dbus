@@ -96,8 +96,8 @@ func marshal(ctx context.Context, v any, ord fragments.ByteOrder) ([]byte, error
 // Marshaler, and must return constant values.
 //
 // MarshalDBus is responsible for inserting padding appropriate to the
-// values being encoded, and for producing output in a way that agrees
-// with the values of SignatureDBus and IsDBusStruct.
+// values being encoded, and for producing output that matches the
+// structure declared by SignatureDBus and IsDBusStruct.
 type Marshaler interface {
 	SignatureDBus() Signature
 	IsDBusStruct() bool

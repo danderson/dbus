@@ -6,8 +6,6 @@ import (
 	"sync"
 )
 
-// cache is a pull-through cache of values derived from reflected
-// types.
 type cache[K, V any] struct {
 	m sync.Map
 }

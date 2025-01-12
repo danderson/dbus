@@ -47,8 +47,8 @@ type Tree struct {
 	Right *Tree
 }
 
-// NestedSelfMashalerVal is a struct with a struct field that
-// implements Marshaler/Unmarshaler with value method
+// NestedSelfMashalerVal is a struct with a field that implements
+// Marshaler/Unmarshaler using value method
 // receivers. NestedSelfMashalerVal cannot be unmarshaled, because
 // UnmarshalDBus must be implemented on a pointer receiver.
 type NestedSelfMashalerVal struct {

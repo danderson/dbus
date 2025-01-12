@@ -16,9 +16,17 @@ type signalKey struct {
 	Interface, Signal string
 }
 
+// RegisterSignalType registers T as the struct type to use when
+// decoding the body of the given signal name.
+//
+// RegisterSignalType panics if the signal already has a registered
+// type.
 func RegisterSignalType[T any](interfaceName, signalName string) {
 	k := signalKey{interfaceName, signalName}
 	t := reflect.TypeFor[T]()
+	if t.Kind() != reflect.Struct {
+		panic(fmt.Errorf("cannot use type %s (%s) as the payload type for signal %s.%s, signal payloads must be structs", t, t.Kind(), k.Interface, k.Signal))
+	}
 	if _, err := SignatureFor[T](); err != nil {
 		panic(fmt.Errorf("cannot use %s as dbus type for signal %s.%s: %w", t, k.Interface, k.Signal, err))
 	}

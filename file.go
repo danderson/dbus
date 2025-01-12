@@ -9,6 +9,7 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
+// File is a file to be sent or received over the bus.
 type File struct {
 	*os.File
 }

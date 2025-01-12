@@ -17,18 +17,30 @@ type structField struct {
 	Type  reflect.Type
 
 	// VarDictFields are the key-specific fields associated with this
-	// structField, which must be a vardict map (map[K]dbus.Variant)
-	VarDictFields reflect.Value // map[keyType]*varDictField
+	// structField. This structField must be a vardict map
+	// (map[K]dbus.Variant).
+	//
+	// VarDictFields is always of type map[K]*varDictField, but has to
+	// be a reflect.Value here because the vardict's key type is only
+	// known at runtime.
+	VarDictFields reflect.Value
 }
 
+// IsVarDict reports whether the struct field is a vardict, with
+// attached associated fields.
 func (f *structField) IsVarDict() bool {
 	return f.VarDictFields.IsValid()
 }
 
+// VarDictKeyCmp returns a comparison function for the vardict's key
+// type. Panics if the field is not a vardict.
 func (f *structField) VarDictKeyCmp() func(a, b reflect.Value) int {
 	return mapKeyCmp(f.Type.Key())
 }
 
+// VarDictField returns the varDictField information for the field
+// associated with the given vardict key, or nil if there is no
+// associated field.
 func (f *structField) VarDictField(key reflect.Value) *varDictField {
 	ret := f.VarDictFields.MapIndex(key)
 	if ret.IsZero() {
@@ -55,8 +67,9 @@ func (f *structField) GetWithZero(structVal reflect.Value) reflect.Value {
 }
 
 // GetWithAlloc loads the struct field from structVal. If loading
-// encounters a nil pointer to an embedded struct, GetWithAlloc sets
-// the pointer to a zero value of the embedded struct.
+// requires traversing a nil pointer into an embedded struct,
+// GetWithAlloc allocates zero values appropriately. The returned
+// [reflect.Value] is settable.
 func (f *structField) GetWithAlloc(structVal reflect.Value) reflect.Value {
 	v := structVal
 	for i, hop := range f.Index {
@@ -94,6 +107,10 @@ func (f *structField) String() string {
 	return ret.String()
 }
 
+// varDictField describes an "associated field" of a vardict. An
+// associated field stores the vardict value for a particular key with
+// strong typing, as opposed to the vardict's default dbus.Variant
+// values.
 type varDictField struct {
 	*structField
 	Key    reflect.Value
@@ -104,6 +121,8 @@ type varDictField struct {
 	EncodeZero bool
 }
 
+// structInfo is the information about a struct relevant to
+// marshaling/unmarshaling.
 type structInfo struct {
 	// Name is the struct's name, for use in diagnostics.
 	Name string
@@ -129,6 +148,11 @@ func (s *structInfo) String() string {
 	return ret.String()
 }
 
+// getStructInfo returns the structInfo for t.
+//
+// getStructInfo returns an error if t is not a struct, or if the
+// struct is malformed in a way that prevents its use for dbus
+// messaging.
 func getStructInfo(t reflect.Type) (*structInfo, error) {
 	if t.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("%s is not a struct", t)
@@ -218,6 +242,8 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 	return ret, nil
 }
 
+// parseStructTag returns the information contained in field's "dbus"
+// struct tag.
 func parseStructTag(field reflect.StructField) (encodeZero, isVardict bool, vardictKey string) {
 	for _, f := range strings.Split(field.Tag.Get("dbus"), ",") {
 		if f == "encodeZero" {
@@ -235,10 +261,14 @@ func parseStructTag(field reflect.StructField) (encodeZero, isVardict bool, vard
 	return encodeZero, isVardict, vardictKey
 }
 
+// isValidVarDictMapType reports whether t is a valid vardict type,
+// i.e. a map[K]dbus.Variant where K is a valid dbus map key type.
 func isValidVarDictMapType(t reflect.Type) bool {
 	return t.Kind() == reflect.Map && mapKeyKinds.Has(t.Key().Kind()) && t.Elem() == variantType
 }
 
+// mapKeyParser returns a function that converts strings into values
+// of the given map key type.
 func mapKeyParser(t reflect.Type) func(string) (reflect.Value, error) {
 	if !mapKeyKinds.Has(t.Kind()) {
 		panic("mapKeyParser called on type that can't be a map key")
@@ -286,6 +316,7 @@ func mapKeyParser(t reflect.Type) func(string) (reflect.Value, error) {
 	}
 }
 
+// mapKeyCmp returns a comparison function for the given map key type.
 func mapKeyCmp(t reflect.Type) func(a, b reflect.Value) int {
 	switch t.Kind() {
 	case reflect.Bool:
@@ -320,12 +351,12 @@ func mapKeyCmp(t reflect.Type) func(a, b reflect.Value) int {
 }
 
 // allocSteps partitions a multi-hop traversal of struct fields into
-// segments that end at either the final value, or a struct pointer
+// segments that end at either the final value, or at a struct pointer
 // that might be nil.
 //
-// This can be used to traverse to idx while allocating missing
-// structs, by using FieldByIndex repeatedly to traverse to each
-// pointer and check for nil-ness.
+// This partition is used by [structField.GetWithZero] and
+// [structField.GetWithAlloc] to load embedded struct fields that
+// require traversing a nil pointer.
 func allocSteps(t reflect.Type, idx []int) [][]int {
 	var ret [][]int
 	prev := 0
@@ -343,6 +374,8 @@ func allocSteps(t reflect.Type, idx []int) [][]int {
 	return ret
 }
 
+// A structer reports its own DBus structness, overriding the opinion
+// of reflect.Type.Kind().
 type structer interface {
 	IsDBusStruct() bool
 }

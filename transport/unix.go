@@ -3,11 +3,13 @@ package transport
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,13 +17,19 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Transport is a raw DBus connection.
 type Transport interface {
 	io.ReadWriteCloser
 
+	// GetFiles returns n received files that were attached to
+	// previously read bytes as ancillary data.
 	GetFiles(n int) ([]*os.File, error)
+	// WriteWithFiles is like Transport.Write, but additionally sends
+	// the given files as ancillary data.
 	WriteWithFiles(bs []byte, fds []*os.File) (int, error)
 }
 
+// DialUnix connects to the bus at the given path.
 func DialUnix(ctx context.Context, path string) (Transport, error) {
 	addr := &net.UnixAddr{
 		Net:  "unix",
@@ -60,6 +68,7 @@ func DialUnix(ctx context.Context, path string) (Transport, error) {
 	return ret, nil
 }
 
+// unixTransport is a Transport that runs over a Unix domain socket.
 type unixTransport struct {
 	conn *net.UnixConn
 	oob  [512]byte
@@ -126,14 +135,22 @@ func (u *unixTransport) auth() error {
 	// In theory, we're supposed to speak SASL now and carefully
 	// negotiate an authentication with the bus. However, in practice,
 	// when you talk to busses over a unix socket, the bus
-	// authenticates you with the peer credentials it can pull from
-	// the socket without the client's help.
+	// authenticates you with the peer credentials that it can pull
+	// from the socket without the client's help.
 	//
-	// So, the auth handshake boils down to a constant preamble string
-	// we can blast out in one block, and see if the response has the
+	// So, the auth handshake boils down to a preamble string we can
+	// blast out in one block, and see if the response has the
 	// expected happy path shape. If it doesn't, we're just going to
 	// hang up anyway so no point in sequencing the messages cleanly.
-	if _, err := u.conn.Write([]byte("\x00AUTH EXTERNAL 31303030\r\nNEGOTIATE_UNIX_FD\r\nBEGIN\r\n")); err != nil {
+	uid := os.Getuid()
+	uidBs := hex.EncodeToString([]byte(strconv.Itoa(uid)))
+	if _, err := u.conn.Write([]byte("\x00AUTH EXTERNAL ")); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(u.conn, uidBs); err != nil {
+		return err
+	}
+	if _, err := u.conn.Write([]byte("\r\nNEGOTIATE_UNIX_FD\r\nBEGIN\r\n")); err != nil {
 		return err
 	}
 

@@ -64,6 +64,8 @@ func (s Signature) IsZero() bool {
 }
 
 // Type returns the reflect.Type the Signature represents.
+//
+// If [Signature.IsZero] is true, Type returns nil.
 func (s Signature) Type() reflect.Type {
 	return s.typ
 }
@@ -203,6 +205,7 @@ func parseOne(sig string, inArray bool) (t reflect.Type, rest string, err error)
 	}
 }
 
+// A signer provides its own DBus signature.
 type signer interface {
 	SignatureDBus() Signature
 }
@@ -214,7 +217,7 @@ func SignatureFor[T any]() (Signature, error) {
 	return signatureFor(reflect.TypeFor[T]())
 }
 
-// SignatureOf returns the Signature for the given value.
+// SignatureOf returns the Signature of the given value.
 func SignatureOf(v any) (Signature, error) {
 	return signatureFor(reflect.TypeOf(v))
 }

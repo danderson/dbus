@@ -14,18 +14,28 @@ const maxWatcherQueue = 20
 
 // Watch watches the bus for signals from other bus participants.
 //
-// The caller must use [Watcher.Match] to specify the signals to be
-// delivered to the Watcher.
+// A newly created Watcher delivers no signals. The caller must use
+// [Watcher.Match] to specify which signals the Watcher should
+// provide.
 func (c *Conn) Watch() *Watcher {
+	w := &Watcher{
+		conn:        c,
+		signals:     make(chan *Signal),
+		wakePump:    make(chan struct{}, 1),
+		stopPump:    make(chan struct{}),
+		pumpStopped: make(chan struct{}),
+		matches:     mapset.New[*Match](),
+	}
+	go w.pump()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	w := newWatcher(c)
 	c.watchers.Add(w)
 	return w
 }
 
-// A Watcher delivers signals received from the bus that match a given
-// set of filters.
+// A Watcher delivers signals received from the bus that match its
+// filters.
 type Watcher struct {
 	conn     *Conn
 	signals  chan *Signal
@@ -41,7 +51,7 @@ type Watcher struct {
 
 // Signal is a signal received from a bus peer.
 type Signal struct {
-	// Sender is the interface that emitted the signal.
+	// Sender is the originator of the signal.
 	Sender Interface
 	// Name is the name of the signal.
 	Name string
@@ -54,19 +64,6 @@ type Signal struct {
 	// followed this one, due to the caller not processing delivered
 	// signals fast enough.
 	Overflow bool
-}
-
-func newWatcher(c *Conn) *Watcher {
-	ret := &Watcher{
-		conn:        c,
-		signals:     make(chan *Signal),
-		wakePump:    make(chan struct{}, 1),
-		stopPump:    make(chan struct{}),
-		pumpStopped: make(chan struct{}),
-		matches:     mapset.New[*Match](),
-	}
-	go ret.pump()
-	return ret
 }
 
 // Close shuts down the Watcher.
@@ -106,8 +103,9 @@ func (w *Watcher) Chan() <-chan *Signal {
 // the Watcher's match specifications.
 //
 // If the match is added successfully, the returned remove function
-// may optionally be used to remove that one match without affecting
-// any others.
+// may be used to remove thee match without affecting other
+// matches. Use of remove is optional, and may be ignored if the set
+// of matches doesn't need to change for the lifetime of the Watcher.
 func (w *Watcher) Match(m *Match) (remove func(), err error) {
 	// Prevent later thread-unsafe mutation
 	m = m.clone()

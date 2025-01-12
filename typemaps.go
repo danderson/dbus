@@ -35,6 +35,8 @@ var (
 		reflect.TypeFor[File]():       'h',
 	}
 
+	// kindToStr maps reflect.Kinds to their corresponding DBus type
+	// signature identifier, if any.
 	kindToStr = map[reflect.Kind]byte{
 		reflect.Bool:    'b',
 		reflect.Uint8:   'y',
@@ -48,8 +50,8 @@ var (
 		reflect.String:  's',
 	}
 
-	// kindToType maps the reflect.Kinds of the basic types representable
-	// by DBus to the corresponding reflect.Type.
+	// kindToType reflect.Kinds of DBus basic types to their
+	// corresponding reflect.Type.
 	kindToType = map[reflect.Kind]reflect.Type{
 		reflect.Bool:    reflect.TypeFor[bool](),
 		reflect.Uint8:   reflect.TypeFor[uint8](),
@@ -63,8 +65,8 @@ var (
 		reflect.String:  reflect.TypeFor[string](),
 	}
 
-	// mapKeyKinds is the set of reflect.Kinds that can be in a DBus map
-	// key.
+	// mapKeyKinds is the set of reflect.Kinds that can be DBus map
+	// keys.
 	mapKeyKinds = mapset.New(
 		reflect.Bool,
 		reflect.Uint8,

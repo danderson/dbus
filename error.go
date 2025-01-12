@@ -5,8 +5,13 @@ import (
 	"reflect"
 )
 
+// TypeError is the error returned when a type cannot be translated to
+// the DBus wire format.
 type TypeError struct {
-	Type   string
+	// Type is the name of the type that caused the error.
+	Type string
+	// Reason is an explanation of why the type isn't representable by
+	// DBus.
 	Reason error
 }
 
@@ -26,8 +31,11 @@ func typeErr(t reflect.Type, reason string, args ...any) error {
 	return TypeError{ts, fmt.Errorf(reason, args...)}
 }
 
+// CallError is the error returned from failed DBus method calls.
 type CallError struct {
-	Name   string
+	// Name is the error name provided by the remote peer.
+	Name string
+	// Detail is the human-readable explanation of what went wrong.
 	Detail string
 }
 

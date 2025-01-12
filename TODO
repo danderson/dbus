@@ -19,3 +19,14 @@ properties of unknown type and then reflect on the output.
 matcher logic needs to handle pointers properly, throughout. I'm not
 giving it any thought in the first pass while I nail down the API
 shape.
+
+Update marshaler/unmarhsaler docstrings to remove mention of
+Marshal/Unmarshal, since those are no longer exported.
+
+Export fragment mapper funcs for people doing custom encoding stuff.
+
+Get rid of the internal marshal/unmarshal funcs. Their callers
+can/should just use fragments.Encoder/Decoder directly.
+
+thread safety of transport. Currently message transmit/receive isn't
+atomic.

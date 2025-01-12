@@ -7,13 +7,19 @@ import (
 	"maps"
 )
 
+// Object is an object exposed by a [Peer].
 type Object struct {
 	p    Peer
 	path ObjectPath
 }
 
-func (o Object) Conn() *Conn      { return o.p.Conn() }
-func (o Object) Peer() Peer       { return o.p }
+// Conn returns the DBus connection associated with the object.
+func (o Object) Conn() *Conn { return o.p.Conn() }
+
+// Peer returns the peer that is exposing the object.
+func (o Object) Peer() Peer { return o.p }
+
+// Path returns the object's path.
 func (o Object) Path() ObjectPath { return o.path }
 
 func (o Object) String() string {
@@ -23,6 +29,10 @@ func (o Object) String() string {
 	return fmt.Sprintf("%s:%s", o.Peer(), o.path)
 }
 
+// Interface returns a named interface on the object.
+//
+// The returned value is a purely local handle. It does not indicate
+// that the object supports the requested interface.
 func (o Object) Interface(name string) Interface {
 	return Interface{
 		o:    o,
@@ -30,6 +40,17 @@ func (o Object) Interface(name string) Interface {
 	}
 }
 
+// Introspect returns the object's description of the interfaces it
+// implements.
+//
+// Note that while DBus objects are generally well behaved, this
+// description is not verified or enforced by the bus, and may not
+// accurately reflect the object's implementation.
+//
+// Introspect returns a [CallError] if the queried object does not
+// implement the [org.freedesktop.DBus.Introspectable] interface.
+//
+// [org.freedesktop.DBus.Introspectable]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-introspectable
 func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*Description, error) {
 	var resp string
 	if err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.Introspectable", "Introspect", nil, &resp, opts...); err != nil {
@@ -43,18 +64,13 @@ func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*Descriptio
 	return &ret, nil
 }
 
-func (o Object) Interfaces(ctx context.Context, opts ...CallOption) ([]Interface, error) {
-	var names []string
-	if err := o.Interface("org.freedesktop.DBus").GetProperty(ctx, "Interfaces", &names, opts...); err != nil {
-		return nil, err
-	}
-	ret := make([]Interface, 0, len(names))
-	for _, n := range names {
-		ret = append(ret, o.Interface(n))
-	}
-	return ret, nil
-}
-
+// ManagedObjects returns the children of the current Object, and the
+// interfaces they implement.
+//
+// ManagedObjects returns a [CallError] if the queried object does not
+// implement the [org.freedesktop.DBus.ObjectManager] interface.
+//
+// [org.freedesktop.DBus.ObjectManager]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
 func (o Object) ManagedObjects(ctx context.Context, opts ...CallOption) (map[Object][]Interface, error) {
 	// object path -> interface name -> map[property name]value
 	var resp map[ObjectPath]map[string]map[string]Variant

@@ -252,7 +252,9 @@ func (c *Conn) removeMatch(ctx context.Context, m *Match) error {
 
 // NameOwnerChanged signals that a name has changed owners.
 //
-// It corresponds to the org.freedesktop.DBus.NameOwnerChanged signal.
+// It corresponds to the [org.freedesktop.DBus.NameOwnerChanged] signal.
+//
+// [org.freedesktop.DBus.NameOwnerChanged]: https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-owner-changed
 type NameOwnerChanged struct {
 	// Name is the bus name whose ownership has changed.
 	Name string
@@ -296,7 +298,9 @@ func (s *NameOwnerChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decod
 // NameLost signals to the receiving client that it has lost ownership
 // of a bus name.
 //
-// It corresponds to the org.freedesktop.DBus.NameLost signal.
+// It corresponds to the [org.freedesktop.DBus.NameLost] signal.
+//
+// [org.freedesktop.DBus.NameLost]: https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-lost
 type NameLost struct {
 	Name string
 }
@@ -304,8 +308,9 @@ type NameLost struct {
 // NameAcquired signals to the receiving client that it has gained
 // ownership of a bus name.
 //
-// It corresponds to the org.freedesktop.DBus.NameAcquired
-// signal.
+// It corresponds to the [org.freedesktop.DBus.NameAcquired] signal.
+//
+// [org.freedesktop.DBus.NameAcquired]: https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-name-acquired
 type NameAcquired struct {
 	Name string
 }
@@ -315,14 +320,18 @@ type NameAcquired struct {
 // list.
 //
 // It corresponds to the
-// org.freedesktop.DBus.ActivatableServicesChanged signal.
+// [org.freedesktop.DBus.ActivatableServicesChanged] signal.
+//
+// [org.freedesktop.DBus.ActivatableServicesChanged]: https://dbus.freedesktop.org/doc/dbus-specification.html#bus-messages-activatable-services-changed
 type ActivatableServicesChanged struct{}
 
 // PropertiesChanged signals that some of the sender's properties have
 // changed.
 //
 // It corresponds to the
-// org.freedesktop.DBus.Properties.PropertiesChanged signal.
+// [org.freedesktop.DBus.Properties.PropertiesChanged] signal.
+//
+// [org.freedesktop.DBus.Properties.PropertiesChanged]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-properties
 type PropertiesChanged struct {
 	// Interface is the DBus interface whose properties have changed.
 	Interface Interface
@@ -367,7 +376,9 @@ func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Deco
 // for use.
 //
 // It corresponds to the
-// org.freedesktop.DBus.ObjectManager.InterfacesAdded signal.
+// [org.freedesktop.DBus.ObjectManager.InterfacesAdded] signal.
+//
+// [org.freedesktop.DBus.ObjectManager.InterfacesAdded]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
 type InterfacesAdded struct {
 	Object     Object
 	Interfaces []Interface
@@ -405,7 +416,9 @@ func (s *InterfacesAdded) UnmarshalDBus(ctx context.Context, d *fragments.Decode
 // more interfaces for use.
 //
 // It corresponds to the
-// org.freedesktop.DBus.ObjectManager.InterfacesRemoved signal.
+// [org.freedesktop.DBus.ObjectManager.InterfacesRemoved] signal.
+//
+// [org.freedesktop.DBus.ObjectManager.InterfacesRemoved]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
 type InterfacesRemoved struct {
 	Object     Object
 	Interfaces []Interface

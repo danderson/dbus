@@ -16,7 +16,7 @@ func mustMarshal(a any) []byte {
 	return bs
 }
 
-func ExampleMarshal_vardict() {
+func Example_vardict() {
 	type NoVardict struct {
 		Name       string
 		Extensions map[uint8]Variant

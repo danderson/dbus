@@ -8,6 +8,8 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
+// byteOrder wraps the fragments package's primitive for handling the
+// DBus byte order mark into something that can be a struct field.
 type byteOrder bool
 
 func (*byteOrder) IsDBusStruct() bool { return false }
@@ -34,6 +36,7 @@ func (b *byteOrder) Order() fragments.ByteOrder {
 	}
 }
 
+// msgType is the type of a DBus message.
 type msgType byte
 
 const (
@@ -43,6 +46,9 @@ const (
 	msgTypeSignal
 )
 
+// structAlign is a zero-length struct field that forces padding to
+// struct alignment. It features at the end of the DBus header, which
+// is specified to contain trailing padding prior to the message body.
 type structAlign struct{}
 
 func (*structAlign) IsDBusStruct() bool       { return true }
@@ -57,9 +63,9 @@ func (*structAlign) UnmarshalDBus(_ context.Context, d *fragments.Decoder) error
 	return nil
 }
 
-// header is a DBus message header, minus the initial byte order
-// indicator byte.
+// header is a DBus message header
 type header struct {
+	// Order is the message's byte order mark.
 	Order byteOrder
 	// Type is the message's type.
 	Type msgType

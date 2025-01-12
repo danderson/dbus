@@ -136,6 +136,11 @@ type Unmarshaler interface {
 
 var unmarshalerType = reflect.TypeFor[Unmarshaler]()
 
+// unmarshalerOnly is the unmarshal method of Unmarshaler by itself.
+//
+// It is used to enforce that the unmarshal function is implemented
+// with a pointer receiver, without requiring that SignatureDBus and
+// IsDBusStruct also have a pointer receiver.
 type unmarshalerOnly interface {
 	UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error
 }
@@ -144,6 +149,8 @@ var unmarshalerOnlyType = reflect.TypeFor[unmarshalerOnly]()
 
 var decoders cache[reflect.Type, fragments.DecoderFunc]
 
+// decoderFor returns the decoder func for the given type, if the type
+// is representable in the DBus wire format.
 func decoderFor(t reflect.Type) (ret fragments.DecoderFunc, err error) {
 	if ret, err := decoders.Get(t); err == nil {
 		return ret, nil
