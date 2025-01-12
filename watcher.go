@@ -46,9 +46,9 @@ type Signal struct {
 	// Name is the name of the signal.
 	Name string
 	// Body is the signal payload. It is a pointer to the struct type
-	// that was associated with the signal using RegisterSignalType(),
-	// or a pointer to an anonymous struct for signals with no
-	// registered payload type.
+	// that was associated with the signal name using
+	// RegisterSignalType(), or a pointer to an anonymous struct for
+	// signals with no registered payload type.
 	Body any
 	// Overflow reports that the watcher discarded some signals that
 	// followed this one, due to the caller not processing delivered
