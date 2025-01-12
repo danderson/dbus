@@ -18,10 +18,32 @@ import (
 // Callers should monitor [Claim.Chan] to find out if and when the
 // name gets assigned to them.
 func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
-	ret, err := newClaim(c, name, opts)
+	ret := &Claim{
+		c:           c,
+		w:           c.Watch(),
+		owner:       make(chan bool, 1),
+		name:        name,
+		pumpStopped: make(chan struct{}),
+		last:        false,
+	}
+	_, err := ret.w.Match(NewMatch().Signal(NameAcquired{}).ArgStr(0, name))
 	if err != nil {
+		ret.w.Close()
 		return nil, err
 	}
+	_, err = ret.w.Match(NewMatch().Signal(NameLost{}).ArgStr(0, name))
+	if err != nil {
+		ret.w.Close()
+		return nil, err
+	}
+
+	if err := ret.Request(opts); err != nil {
+		ret.w.Close()
+		return nil, err
+	}
+
+	go ret.pump()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.claims.Add(ret)
@@ -79,28 +101,6 @@ type Claim struct {
 
 	last bool
 	opts ClaimOptions
-}
-
-func newClaim(c *Conn, name string, opts ClaimOptions) (*Claim, error) {
-	ret := &Claim{
-		c:           c,
-		w:           c.Watch(),
-		owner:       make(chan bool, 1),
-		name:        name,
-		pumpStopped: make(chan struct{}),
-		last:        false,
-	}
-	ret.w.Match(NewMatch().Signal(NameAcquired{}).ArgStr(0, name))
-	ret.w.Match(NewMatch().Signal(NameLost{}).ArgStr(0, name))
-
-	if err := ret.Request(opts); err != nil {
-		ret.w.Close()
-		return nil, err
-	}
-
-	go ret.pump()
-
-	return ret, nil
 }
 
 // Request makes a new request to the bus for the claimed name.
