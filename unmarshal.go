@@ -515,6 +515,15 @@ func newVarDictFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
 			keyStr := fmt.Sprint(key.Elem())
 			if field := fields[keyStr]; field != nil {
 				fv := field.GetWithAlloc(v)
+				// TODO: could make the kind test and number of
+				// pointer unrolls static, type is known at compile
+				// time.
+				for fv.Kind() == reflect.Pointer {
+					if fv.IsNil() {
+						fv.Set(reflect.New(fv.Type().Elem()))
+					}
+					fv = fv.Elem()
+				}
 				inner := val.Elem().Interface().(Variant).Value
 				innerVal := reflect.ValueOf(inner)
 				if fv.Type() != innerVal.Type() {

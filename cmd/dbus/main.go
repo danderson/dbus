@@ -137,8 +137,12 @@ func runWhois(env *command.Env, peer string) error {
 		return fmt.Errorf("Getting credentials of %s: %w", peer, err)
 	}
 
-	fmt.Println("PID:", creds.UID)
-	fmt.Println("UID:", creds.UID)
+	if creds.PID != nil {
+		fmt.Println("PID:", *creds.PID)
+	}
+	if creds.UID != nil {
+		fmt.Println("UID:", *creds.UID)
+	}
 	fmt.Println("GIDs:", creds.GIDs)
 	if creds.PIDFD.File != nil {
 		fmt.Println("PIDFD:", creds.PIDFD.File.Fd())
