@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -66,6 +67,7 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 // Conn is a DBus connection.
 type Conn struct {
 	t        transport.Transport
+	writeMu  sync.Mutex
 	clientID string
 
 	bus Interface
@@ -76,7 +78,6 @@ type Conn struct {
 	lastSerial uint32
 	watchers   mapset.Set[*Watcher]
 	claims     mapset.Set[*Claim]
-	handlers   map[string]handlerFunc
 }
 
 type pendingCall struct {
@@ -130,6 +131,25 @@ func (c *Conn) Peer(name string) Peer {
 	}
 }
 
+func (c *Conn) writeMsg(ctx context.Context, files []*os.File, hdr *header, body []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	enc := fragments.Encoder{
+		Order:  fragments.NativeEndian,
+		Mapper: encoderFor,
+	}
+	if err := enc.Value(ctx, hdr); err != nil {
+		return err
+	}
+	enc.Write(body)
+	if _, err := c.t.WriteWithFiles(enc.Out, files); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *Conn) readLoop() {
 	for {
 		if err := c.dispatchMsg(); errors.Is(err, net.ErrClosed) {
@@ -144,51 +164,73 @@ func (c *Conn) readLoop() {
 	}
 }
 
-func (c *Conn) dispatchMsg() error {
-	var hdr header
-	if err := unmarshal(context.Background(), c.t, fragments.NativeEndian, &hdr); err != nil {
-		return err
+type msg struct {
+	header
+	body  fragments.Decoder
+	files []*os.File
+}
+
+// readMsg reads one complete DBus message from c.t. Must not be
+// called concurrently (Conn.dispatchMsg ensures this).
+func (c *Conn) readMsg() (*msg, error) {
+	ret := &msg{
+		body: fragments.Decoder{
+			Order:  fragments.NativeEndian,
+			Mapper: decoderFor,
+			In:     c.t,
+		},
 	}
-	bodyReader := io.LimitReader(c.t, int64(hdr.Length))
-	defer func() {
-		io.Copy(io.Discard, bodyReader)
-	}()
-	fs, err := c.t.GetFiles(int(hdr.NumFDs))
+	if err := ret.body.Value(context.Background(), &ret.header); err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(io.LimitReader(c.t, int64(ret.header.Length)))
+	if err != nil {
+		return nil, err
+	}
+	ret.body.In = bytes.NewBuffer(body)
+	ret.files, err = c.t.GetFiles(int(ret.header.NumFDs))
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+func (c *Conn) dispatchMsg() error {
+	msg, err := c.readMsg()
 	if err != nil {
 		return err
 	}
-
-	if err := hdr.Valid(); err != nil {
+	if err := msg.Valid(); err != nil {
 		return fmt.Errorf("received invalid header: %w", err)
 	}
 
 	ctx := context.Background()
-	if len(fs) > 0 {
-		ctx = withContextFiles(ctx, fs)
+	if len(msg.files) > 0 {
+		ctx = withContextFiles(ctx, msg.files)
 	}
-	if hdr.Sender != "" && hdr.Path != "" && hdr.Interface != "" {
-		ctx = withContextSender(ctx, c.Peer(hdr.Sender).Object(hdr.Path).Interface(hdr.Interface))
+	if msg.Sender != "" && msg.Path != "" && msg.Interface != "" {
+		ctx = withContextSender(ctx, c.Peer(msg.Sender).Object(msg.Path).Interface(msg.Interface))
 	}
 
-	switch hdr.Type {
+	switch msg.Type {
 	case msgTypeCall:
 		log.Printf("TODO: CALL")
 	case msgTypeReturn:
-		return c.dispatchReturn(ctx, &hdr, bodyReader, fs)
+		return c.dispatchReturn(ctx, msg)
 	case msgTypeError:
-		return c.dispatchErr(&hdr, bodyReader)
+		return c.dispatchErr(msg)
 	case msgTypeSignal:
-		return c.dispatchSignal(ctx, &hdr, bodyReader)
+		return c.dispatchSignal(ctx, msg)
 	}
 	return nil
 }
 
-func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, _ []*os.File) error {
+func (c *Conn) dispatchReturn(ctx context.Context, msg *msg) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		ret := c.calls[hdr.ReplySerial]
-		delete(c.calls, hdr.ReplySerial)
+		ret := c.calls[msg.ReplySerial]
+		delete(c.calls, msg.ReplySerial)
 		return ret
 	}()
 
@@ -200,7 +242,7 @@ func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, 
 	ctx = withContextSender(ctx, pending.iface)
 
 	if pending.resp != nil {
-		if err := unmarshal(ctx, body, hdr.Order.Order(), pending.resp); err != nil {
+		if err := msg.body.Value(ctx, pending.resp); err != nil {
 			return err
 		}
 	}
@@ -208,12 +250,12 @@ func (c *Conn) dispatchReturn(ctx context.Context, hdr *header, body io.Reader, 
 	return nil
 }
 
-func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
+func (c *Conn) dispatchErr(msg *msg) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		ret := c.calls[hdr.ReplySerial]
-		delete(c.calls, hdr.ReplySerial)
+		ret := c.calls[msg.ReplySerial]
+		delete(c.calls, msg.ReplySerial)
 		return ret
 	}()
 
@@ -223,17 +265,13 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	}
 
 	errStr := func() string {
-		if hdr.Signature.IsZero() {
+		if msg.Signature.IsZero() {
 			return ""
 		}
-		if s := hdr.Signature.String(); s != "s" && !strings.HasPrefix(s, "(s") {
+		if s := msg.Signature.String(); s != "s" && !strings.HasPrefix(s, "(s") {
 			return ""
 		}
-		dec := fragments.Decoder{
-			Order: hdr.Order.Order(),
-			In:    body,
-		}
-		errStr, err := dec.String()
+		errStr, err := msg.body.String()
 		if err != nil {
 			return fmt.Sprintf("got error while decoding error detail: %v", err)
 		}
@@ -241,17 +279,17 @@ func (c *Conn) dispatchErr(hdr *header, body io.Reader) error {
 	}()
 
 	pending.err = CallError{
-		Name:   hdr.ErrName,
+		Name:   msg.ErrName,
 		Detail: errStr,
 	}
 	close(pending.notify)
 	return nil
 }
 
-func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) error {
-	signalType := signalNameToType[signalKey{hdr.Interface, hdr.Member}]
+func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
+	signalType := signalNameToType[signalKey{msg.Interface, msg.Member}]
 	if signalType == nil {
-		signalType = hdr.Signature.Type()
+		signalType = msg.Signature.Type()
 	}
 
 	sender, _ := ContextSender(ctx)
@@ -259,7 +297,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 	var signal reflect.Value
 	if signalType != nil {
 		signal = reflect.New(signalType)
-		if err := unmarshal(ctx, body, hdr.Order.Order(), signal.Interface()); err != nil {
+		if err := msg.body.Value(ctx, signal.Interface()); err != nil {
 			return err
 		}
 	} else {
@@ -269,7 +307,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, hdr *header, body io.Reader) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for w := range c.watchers {
-		w.deliver(sender, hdr, signal)
+		w.deliver(sender, &msg.header, signal)
 	}
 
 	return nil
@@ -383,17 +421,8 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		return err
 	}
 
-	bs, err := marshal(context.Background(), &hdr, fragments.NativeEndian)
-	if err != nil {
-		return err
-	}
-	if _, err := c.t.WriteWithFiles(bs, files); err != nil {
+	if err := c.writeMsg(context.Background(), files, &hdr, payload); err != nil {
 		return err // TODO: close transport?
-	}
-	if body != nil {
-		if _, err := c.t.Write(payload); err != nil {
-			return err // TODO: close transport?
-		}
 	}
 
 	if !hdr.WantReply() {

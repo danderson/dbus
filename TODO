@@ -27,6 +27,3 @@ Export fragment mapper funcs for people doing custom encoding stuff.
 
 Get rid of the internal marshal/unmarshal funcs. Their callers
 can/should just use fragments.Encoder/Decoder directly.
-
-thread safety of transport. Currently message transmit/receive isn't
-atomic.
