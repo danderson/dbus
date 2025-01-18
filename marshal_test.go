@@ -546,8 +546,11 @@ func TestMarshal(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got, err := marshal(context.Background(), tc.in, tc.enc)
-		if err != nil {
+		enc := fragments.Encoder{
+			Order:  tc.enc,
+			Mapper: encoderFor,
+		}
+		if err := enc.Value(context.Background(), tc.in); err != nil {
 			if len(tc.want) != 0 {
 				t.Errorf("Marshal(%T) got err: %v", tc.in, err)
 			} else if testing.Verbose() {
@@ -555,10 +558,10 @@ func TestMarshal(t *testing.T) {
 			}
 		} else if len(tc.want) == 0 {
 			t.Errorf("Marshal(%T) encoded successfully, want error", tc.in)
-		} else if !bytes.Equal(got, tc.want) {
-			t.Errorf("Marshal(%T) wrong encoding:\n  got: % x\n want: % x", tc.in, got, tc.want)
+		} else if !bytes.Equal(enc.Out, tc.want) {
+			t.Errorf("Marshal(%T) wrong encoding:\n  got: % x\n want: % x", tc.in, enc.Out, tc.want)
 		} else if testing.Verbose() {
-			t.Logf("Marshal(%T:%#v, %s) = % x", tc.in, tc.in, encName[tc.enc], got)
+			t.Logf("Marshal(%T:%#v, %s) = % x", tc.in, tc.in, encName[tc.enc], enc.Out)
 		}
 	}
 }

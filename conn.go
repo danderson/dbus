@@ -46,7 +46,11 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 		return nil, err
 	}
 	ret := &Conn{
-		t:     t,
+		t: t,
+		enc: fragments.Encoder{
+			Order:  fragments.NativeEndian,
+			Mapper: encoderFor,
+		},
 		calls: map[uint32]*pendingCall{},
 	}
 	ret.bus = ret.
@@ -67,10 +71,14 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 // Conn is a DBus connection.
 type Conn struct {
 	t        transport.Transport
-	writeMu  sync.Mutex
 	clientID string
 
 	bus Interface
+
+	writeMu sync.Mutex
+	enc     fragments.Encoder
+	encBody []byte
+	encHdr  []byte
 
 	mu         sync.Mutex
 	closed     bool
@@ -131,19 +139,37 @@ func (c *Conn) Peer(name string) Peer {
 	}
 }
 
-func (c *Conn) writeMsg(ctx context.Context, files []*os.File, hdr *header, body []byte) error {
+func (c *Conn) writeMsg(ctx context.Context, hdr *header, body any) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	enc := fragments.Encoder{
-		Order:  fragments.NativeEndian,
-		Mapper: encoderFor,
+	var files []*os.File
+	if body != nil {
+		ctx := withContextPutFiles(ctx, &files)
+		c.enc.Out = c.encBody[:0]
+		if err := c.enc.Value(ctx, body); err != nil {
+			return err
+		}
+		sig, err := SignatureOf(body)
+		if err != nil {
+			return err
+		}
+		hdr.Length = uint32(len(c.enc.Out))
+		hdr.Signature = sig.asMsgBody()
+		hdr.NumFDs = uint32(len(files))
 	}
-	if err := enc.Value(ctx, hdr); err != nil {
+	c.encBody = c.enc.Out
+
+	c.enc.Out = c.encHdr[:0]
+	if err := c.enc.Value(ctx, hdr); err != nil {
 		return err
 	}
-	enc.Write(body)
-	if _, err := c.t.WriteWithFiles(enc.Out, files); err != nil {
+	c.encHdr = c.enc.Out
+
+	if _, err := c.t.WriteWithFiles(c.encHdr, files); err != nil {
+		return err
+	}
+	if _, err := c.t.Write(c.encBody); err != nil {
 		return err
 	}
 
@@ -379,40 +405,15 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		}
 	}()
 
-	var (
-		payload []byte
-		sig     Signature
-		files   []*os.File
-		err     error
-	)
-	if body != nil {
-		ctx := withContextPutFiles(context.Background(), &files)
-		payload, err = marshal(ctx, body, fragments.NativeEndian)
-		if err != nil {
-			return err
-		}
-
-		sig, err = SignatureOf(body)
-		if err != nil {
-			return err
-		}
-		sig = sig.asMsgBody()
-	}
-
 	hdr := header{
 		Type:        msgTypeCall,
 		Flags:       0,
 		Version:     1,
-		Length:      uint32(len(payload)),
 		Serial:      serial,
 		Destination: destination,
 		Path:        path,
 		Interface:   iface,
 		Member:      method,
-		NumFDs:      uint32(len(files)),
-	}
-	if body != nil {
-		hdr.Signature = sig
 	}
 	for _, f := range opts {
 		hdr.Flags |= f.callOptionValue()
@@ -421,7 +422,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		return err
 	}
 
-	if err := c.writeMsg(context.Background(), files, &hdr, payload); err != nil {
+	if err := c.writeMsg(context.Background(), &hdr, body); err != nil {
 		return err // TODO: close transport?
 	}
 

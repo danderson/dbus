@@ -128,6 +128,9 @@ func (d *Decoder) Value(ctx context.Context, v any) error {
 		return errors.New("Mapper not provided to Decoder")
 	}
 	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return fmt.Errorf("outval of Decoder.Value must be a pointer, not a nil interface value")
+	}
 	if rv.Kind() != reflect.Pointer {
 		return fmt.Errorf("outval of Decoder.Value must be a pointer, got %s", rv.Type())
 	}

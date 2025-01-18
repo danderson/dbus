@@ -99,8 +99,11 @@ func TestMarshalVariant(t *testing.T) {
 
 	for _, tc := range tests {
 		v := Variant{tc.in}
-		got, err := marshal(context.Background(), v, fragments.BigEndian)
-		if err != nil {
+		enc := fragments.Encoder{
+			Order:  fragments.BigEndian,
+			Mapper: encoderFor,
+		}
+		if err := enc.Value(context.Background(), v); err != nil {
 			if len(tc.want) != 0 {
 				t.Errorf("Marshal(Variant{%T}) got err: %v", tc.in, err)
 			} else if testing.Verbose() {
@@ -110,18 +113,22 @@ func TestMarshalVariant(t *testing.T) {
 		} else if len(tc.want) == 0 {
 			t.Errorf("Marshal(Variant{%T}) encoded successfully, want error", tc.in)
 			continue
-		} else if !bytes.Equal(got, tc.want) {
-			t.Errorf("Marshal(Variant{%T}) wrong encoding:\n  got: % x\n want: % x", tc.in, got, tc.want)
+		} else if !bytes.Equal(enc.Out, tc.want) {
+			t.Errorf("Marshal(Variant{%T}) wrong encoding:\n  got: % x\n want: % x", tc.in, enc.Out, tc.want)
 		} else if testing.Verbose() {
-			t.Logf("Marshal(Variant{%T:%#v}) = % x", tc.in, tc.in, got)
+			t.Logf("Marshal(Variant{%T:%#v}) = % x", tc.in, tc.in, enc.Out)
 		}
 
 		if tc.wantUnmarshal == nil {
 			continue
 		}
 		var gotU Variant
-		err = unmarshal(context.Background(), bytes.NewBuffer(got), fragments.BigEndian, &gotU)
-		if err != nil {
+		dec := fragments.Decoder{
+			Order:  fragments.BigEndian,
+			Mapper: decoderFor,
+			In:     bytes.NewBuffer(enc.Out),
+		}
+		if err := dec.Value(context.Background(), &gotU); err != nil {
 			t.Errorf("Unmarshal(Marshal(Variant{%T})) got err: %v", tc.in, err)
 		}
 		if diff := cmp.Diff(gotU, tc.wantUnmarshal, cmp.Comparer(func(a, b Signature) bool {

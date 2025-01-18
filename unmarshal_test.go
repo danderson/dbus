@@ -306,7 +306,12 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 	}
 
 	b := bytes.NewBuffer(in)
-	err := unmarshal(context.Background(), b, fragments.BigEndian, got)
+	dec := fragments.Decoder{
+		Order:  fragments.BigEndian,
+		Mapper: decoderFor,
+		In:     b,
+	}
+	err := dec.Value(context.Background(), got)
 	if err != nil {
 		if !wantErr {
 			t.Errorf("Unmarshal(..., %T) got err: %v", want, err)
@@ -325,9 +330,12 @@ func testUnmarshal(t *testing.T, in []byte, want any, wantErr bool) {
 }
 
 func testRoundTrip(t *testing.T, val any) {
-	bs, err := marshal(context.Background(), val, fragments.BigEndian)
-	if err != nil {
+	enc := fragments.Encoder{
+		Order:  fragments.BigEndian,
+		Mapper: encoderFor,
+	}
+	if err := enc.Value(context.Background(), val); err != nil {
 		t.Errorf("re-Marshal(%T) got err: %v", val, err)
 	}
-	testUnmarshal(t, bs, val, false)
+	testUnmarshal(t, enc.Out, val, false)
 }
