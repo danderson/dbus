@@ -39,12 +39,12 @@ func (s Signature) MarshalDBus(ctx context.Context, e *fragments.Encoder) error 
 	return nil
 }
 
-func (s *Signature) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
-	u8, err := st.Uint8()
+func (s *Signature) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
+	u8, err := d.Uint8()
 	if err != nil {
 		return err
 	}
-	bs, err := st.Read(int(u8) + 1)
+	bs, err := d.Read(int(u8) + 1)
 	*s, err = ParseSignature(string(bs[:len(bs)-1]))
 	return err
 }

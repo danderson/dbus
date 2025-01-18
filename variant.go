@@ -18,15 +18,15 @@ type Variant struct {
 
 var variantType = reflect.TypeFor[Variant]()
 
-func (v Variant) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
+func (v Variant) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
 	sig, err := SignatureOf(v.Value)
 	if err != nil {
 		return err
 	}
-	if err := st.Value(ctx, sig); err != nil {
+	if err := e.Value(ctx, sig); err != nil {
 		return err
 	}
-	if err := st.Value(ctx, v.Value); err != nil {
+	if err := e.Value(ctx, v.Value); err != nil {
 		return err
 	}
 	return nil

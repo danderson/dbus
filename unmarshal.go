@@ -107,12 +107,12 @@ func unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v a
 	if err != nil {
 		return err
 	}
-	st := fragments.Decoder{
+	d := fragments.Decoder{
 		Order:  ord,
 		Mapper: decoderFor,
 		In:     data,
 	}
-	return dec(ctx, &st, val.Elem())
+	return dec(ctx, &d, val.Elem())
 }
 
 // Unmarshaler is the interface implemented by types that can
@@ -131,7 +131,7 @@ func unmarshal(ctx context.Context, data io.Reader, ord fragments.ByteOrder, v a
 type Unmarshaler interface {
 	SignatureDBus() Signature
 	IsDBusStruct() bool
-	UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error
+	UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error
 }
 
 var unmarshalerType = reflect.TypeFor[Unmarshaler]()
@@ -142,7 +142,7 @@ var unmarshalerType = reflect.TypeFor[Unmarshaler]()
 // with a pointer receiver, without requiring that SignatureDBus and
 // IsDBusStruct also have a pointer receiver.
 type unmarshalerOnly interface {
-	UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error
+	UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error
 }
 
 var unmarshalerOnlyType = reflect.TypeFor[unmarshalerOnly]()
@@ -226,19 +226,19 @@ func decoderFor(t reflect.Type) (ret fragments.DecoderFunc, err error) {
 
 func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 	ptr := newMarshalDecoder(reflect.PointerTo(t))
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-		return ptr(ctx, st, v.Addr())
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		return ptr(ctx, d, v.Addr())
 	}
 }
 
 func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			elem := reflect.New(t.Elem())
 			v.Set(elem)
 		}
 		m := v.Interface().(Unmarshaler)
-		return m.UnmarshalDBus(ctx, st)
+		return m.UnmarshalDBus(ctx, d)
 	}
 }
 
@@ -248,17 +248,17 @@ func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			if !v.CanSet() {
 				panic("got an unsettable nil pointer, should be impossible!")
 			}
 			elem := reflect.New(elem)
-			if err := elemDec(ctx, st, elem.Elem()); err != nil {
+			if err := elemDec(ctx, d, elem.Elem()); err != nil {
 				return err
 			}
 			v.Set(elem)
-		} else if err := elemDec(ctx, st, v.Elem()); err != nil {
+		} else if err := elemDec(ctx, d, v.Elem()); err != nil {
 			return err
 		}
 		return nil
@@ -267,8 +267,8 @@ func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 }
 
 func newBoolDecoder() fragments.DecoderFunc {
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-		u, err := st.Uint32()
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		u, err := d.Uint32()
 		if err != nil {
 			return err
 		}
@@ -280,8 +280,8 @@ func newBoolDecoder() fragments.DecoderFunc {
 func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u8, err := st.Uint8()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u8, err := d.Uint8()
 			if err != nil {
 				return err
 			}
@@ -289,8 +289,8 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 2:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u16, err := st.Uint16()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u16, err := d.Uint16()
 			if err != nil {
 				return err
 			}
@@ -298,8 +298,8 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 4:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u32, err := st.Uint32()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u32, err := d.Uint32()
 			if err != nil {
 				return err
 			}
@@ -307,8 +307,8 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 8:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u64, err := st.Uint64()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u64, err := d.Uint64()
 			if err != nil {
 				return err
 			}
@@ -323,8 +323,8 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u8, err := st.Uint8()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u8, err := d.Uint8()
 			if err != nil {
 				return err
 			}
@@ -332,8 +332,8 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 2:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u16, err := st.Uint16()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u16, err := d.Uint16()
 			if err != nil {
 				return err
 			}
@@ -341,8 +341,8 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 4:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u32, err := st.Uint32()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u32, err := d.Uint32()
 			if err != nil {
 				return err
 			}
@@ -350,8 +350,8 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 			return nil
 		}
 	case 8:
-		return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			u64, err := st.Uint64()
+		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			u64, err := d.Uint64()
 			if err != nil {
 				return err
 			}
@@ -364,8 +364,8 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 }
 
 func newFloatDecoder() fragments.DecoderFunc {
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-		u64, err := st.Uint64()
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		u64, err := d.Uint64()
 		if err != nil {
 			return err
 		}
@@ -375,8 +375,8 @@ func newFloatDecoder() fragments.DecoderFunc {
 }
 
 func newStringDecoder() fragments.DecoderFunc {
-	return func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-		s, err := st.String()
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		s, err := d.String()
 		if err != nil {
 			return err
 		}
@@ -387,8 +387,8 @@ func newStringDecoder() fragments.DecoderFunc {
 
 func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	if t.Elem().Kind() == reflect.Uint8 {
-		fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
-			bs, err := st.Bytes()
+		fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			bs, err := d.Bytes()
 			if err != nil {
 				return err
 			}
@@ -404,13 +404,13 @@ func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	}
 	isStruct := alignAsStruct(t.Elem())
 
-	fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		v.Set(v.Slice(0, 0))
 
-		_, err := st.Array(isStruct, func(i int) error {
+		_, err := d.Array(isStruct, func(i int) error {
 			v.Grow(1)
 			v.Set(v.Slice(0, i+1))
-			if err := elemDec(ctx, st, v.Index(i)); err != nil {
+			if err := elemDec(ctx, d, v.Index(i)); err != nil {
 				return err
 			}
 			return nil
@@ -564,7 +564,7 @@ func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 		return nil, err
 	}
 
-	fn := func(ctx context.Context, st *fragments.Decoder, v reflect.Value) error {
+	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			v.Set(reflect.MakeMap(t))
 		} else {
@@ -574,14 +574,14 @@ func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 		key := reflect.New(kt)
 		val := reflect.New(vt)
 
-		_, err := st.Array(true, func(i int) error {
+		_, err := d.Array(true, func(i int) error {
 			key.Elem().SetZero()
 			val.Elem().SetZero()
-			err := st.Struct(func() error {
-				if err := kDec(ctx, st, key.Elem()); err != nil {
+			err := d.Struct(func() error {
+				if err := kDec(ctx, d, key.Elem()); err != nil {
 					return err
 				}
-				if err := vDec(ctx, st, val.Elem()); err != nil {
+				if err := vDec(ctx, d, val.Elem()); err != nil {
 					return err
 				}
 				return nil

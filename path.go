@@ -13,14 +13,14 @@ import (
 // over DBus.
 type ObjectPath string
 
-func (p ObjectPath) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
-	st.Value(ctx, string(p.Clean()))
+func (p ObjectPath) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
+	e.String(string(p.Clean()))
 	return nil
 }
 
-func (p *ObjectPath) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
+func (p *ObjectPath) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
 	var s string
-	if err := st.Value(ctx, &s); err != nil {
+	if err := d.Value(ctx, &s); err != nil {
 		return err
 	}
 	*p = ObjectPath(s).Clean()

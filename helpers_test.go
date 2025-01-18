@@ -100,15 +100,17 @@ type SelfMarshalerVal struct {
 	B byte
 }
 
-func (s SelfMarshalerVal) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
-	st.Pad(3)
-	st.Write([]byte{0, s.B + 1})
+func (s SelfMarshalerVal) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
+	e.Pad(3)
+	e.Write([]byte{0, s.B + 1})
 	return nil
 }
 
-func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
-	st.Pad(3)
-	bs, err := st.Read(2)
+func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
+	if err := d.Pad(3); err != nil {
+		return err
+	}
+	bs, err := d.Read(2)
 	if err != nil {
 		return err
 	}
@@ -131,15 +133,17 @@ type SelfMarshalerPtr struct {
 	B byte
 }
 
-func (s *SelfMarshalerPtr) MarshalDBus(ctx context.Context, st *fragments.Encoder) error {
-	st.Pad(3)
-	st.Write([]byte{0, s.B + 1})
+func (s *SelfMarshalerPtr) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
+	e.Pad(3)
+	e.Write([]byte{0, s.B + 1})
 	return nil
 }
 
-func (s *SelfMarshalerPtr) UnmarshalDBus(ctx context.Context, st *fragments.Decoder) error {
-	st.Pad(3)
-	bs, err := st.Read(2)
+func (s *SelfMarshalerPtr) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
+	if err := d.Pad(3); err != nil {
+		return err
+	}
+	bs, err := d.Read(2)
 	if err != nil {
 		return err
 	}
