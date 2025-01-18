@@ -6,29 +6,61 @@ import (
 	"os"
 )
 
-// senderContextKey is the context key that carries the sender of a
+func getCtx[T any](ctx context.Context, key any) (ret T, ok bool) {
+	v := ctx.Value(key)
+	if v == nil {
+		return ret, false
+	}
+	if ret, ok := v.(T); ok {
+		return ret, true
+	}
+	return ret, false
+}
+
+// emitterContextKey is the context key that carries the emitter of a
+// DBus signal.
+type emitterContextKey struct{}
+
+// withContextEmitter augments ctx with DBus emitter information.
+func withContextEmitter(ctx context.Context, iface Interface) context.Context {
+	return context.WithValue(ctx, emitterContextKey{}, iface)
+}
+
+// ContextEmitter extracts the current DBus emitter information from
+// ctx, and reports whether any emitter information was present.
+func ContextEmitter(ctx context.Context) (Interface, bool) {
+	return getCtx[Interface](ctx, emitterContextKey{})
+}
+
+// emitterContextKey is the context key that carries the sender of a
 // DBus message.
 type senderContextKey struct{}
 
 // withContextSender augments ctx with DBus sender information.
-func withContextSender(ctx context.Context, iface Interface) context.Context {
-	return context.WithValue(ctx, senderContextKey{}, iface)
+func withContextSender(ctx context.Context, peer Peer) context.Context {
+	return context.WithValue(ctx, senderContextKey{}, peer)
 }
 
 // ContextSender extracts the current DBus sender information from
 // ctx, and reports whether any sender information was present.
-//
-// Sender information is available in [Marshaler] and [Unmarshaler]
-// calls.
-func ContextSender(ctx context.Context) (Interface, bool) {
-	v := ctx.Value(senderContextKey{})
-	if v == nil {
-		return Interface{}, false
-	}
-	if ret, ok := v.(Interface); ok {
-		return ret, true
-	}
-	return Interface{}, false
+func ContextSender(ctx context.Context) (Peer, bool) {
+	return getCtx[Peer](ctx, senderContextKey{})
+}
+
+// destContextKey is the context key that carries the destination of a
+// DBus message.
+type destContextKey struct{}
+
+// withContextDest augments ctx with DBus destination information.
+func withContextDestination(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, destContextKey{}, name)
+}
+
+// ContextSender extracts the current DBus destination information
+// from ctx, and reports whether any destination information was
+// present.
+func ContextDestination(ctx context.Context) (string, bool) {
+	return getCtx[string](ctx, destContextKey{})
 }
 
 // filesContextKey is the context key that carries file descriptors

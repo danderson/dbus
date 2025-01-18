@@ -277,18 +277,18 @@ func (s *NameOwnerChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decod
 		return err
 	}
 
-	sender, ok := ContextSender(ctx)
+	emitter, ok := ContextEmitter(ctx)
 	if !ok {
-		return errors.New("can't unmarshal NameOwnerChanged signal, no sender in context")
+		return errors.New("can't unmarshal NameOwnerChanged signal, no emitter in context")
 	}
 
 	s.Name = body.Name
 	if body.Prev != "" {
-		p := sender.Conn().Peer(body.Prev)
+		p := emitter.Conn().Peer(body.Prev)
 		s.Prev = &p
 	}
 	if body.New != "" {
-		n := sender.Conn().Peer(body.New)
+		n := emitter.Conn().Peer(body.New)
 		s.New = &n
 	}
 
@@ -357,12 +357,12 @@ func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Deco
 		return err
 	}
 
-	sender, ok := ContextSender(ctx)
+	emitter, ok := ContextEmitter(ctx)
 	if !ok {
-		return errors.New("can't unmarshal PropertiesChanged signal, no sender in context")
+		return errors.New("can't unmarshal PropertiesChanged signal, no emitter in context")
 	}
 
-	s.Interface = sender.Object().Interface(body.Interface)
+	s.Interface = emitter.Object().Interface(body.Interface)
 	s.Changed = map[string]any{}
 	for k, v := range body.Changed {
 		s.Changed[k] = v.Value
@@ -397,13 +397,13 @@ func (s *InterfacesAdded) UnmarshalDBus(ctx context.Context, d *fragments.Decode
 		return err
 	}
 
-	sender, ok := ContextSender(ctx)
+	emitter, ok := ContextEmitter(ctx)
 	if !ok {
-		return errors.New("can't unmarshal InterfacesAdded signal, no sender in context")
+		return errors.New("can't unmarshal InterfacesAdded signal, no emitter in context")
 	}
 
 	// TODO: check path is a child of iface.Object()
-	s.Object = sender.Peer().Object(body.Path)
+	s.Object = emitter.Peer().Object(body.Path)
 	s.Interfaces = s.Interfaces[:0]
 	for k := range maps.Keys(body.IfsAndProps) {
 		s.Interfaces = append(s.Interfaces, s.Object.Interface(k))
@@ -437,12 +437,12 @@ func (s *InterfacesRemoved) UnmarshalDBus(ctx context.Context, d *fragments.Deco
 		return err
 	}
 
-	sender, ok := ContextSender(ctx)
+	emitter, ok := ContextEmitter(ctx)
 	if !ok {
-		return errors.New("can't unmarshal InterfacesRemoved signal, no sender in context")
+		return errors.New("can't unmarshal InterfacesRemoved signal, no emitter in context")
 	}
 
-	s.Object = sender.Peer().Object(body.Path)
+	s.Object = emitter.Peer().Object(body.Path)
 	s.Interfaces = s.Interfaces[:0]
 	for _, iface := range body.Ifs {
 		s.Interfaces = append(s.Interfaces, s.Object.Interface(iface))

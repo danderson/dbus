@@ -4,11 +4,11 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"log"
 	"maps"
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"syscall"
 
 	"github.com/creachadair/command"
@@ -18,15 +18,44 @@ import (
 )
 
 var globalArgs struct {
-	UseSessionBus bool `flag:"session,Connect to session bus instead of system bus"`
+	UseSessionBus bool   `flag:"session,Connect to session bus instead of system bus"`
+	Names         string `flag:"names,Comma-separated list of bus names to claim"`
 }
 
 func busConn(ctx context.Context) (*dbus.Conn, error) {
+	var mk func(context.Context) (*dbus.Conn, error)
 	if globalArgs.UseSessionBus {
-		return dbus.SessionBus(ctx)
+		mk = dbus.SessionBus
 	} else {
-		return dbus.SystemBus(ctx)
+		mk = dbus.SystemBus
 	}
+	conn, err := mk(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if globalArgs.Names == "" {
+		return conn, nil
+	}
+
+	for _, n := range strings.Split(globalArgs.Names, ",") {
+		claim, err := conn.Claim(n, dbus.ClaimOptions{})
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("claiming name %q: %w", n, err)
+		}
+		go func() {
+			for isOwner := range claim.Chan() {
+				if isOwner {
+					fmt.Printf("acquired name %s\n", n)
+				} else {
+					fmt.Printf("lost name %s\n", n)
+				}
+			}
+		}()
+	}
+
+	return conn, nil
 }
 
 func main() {
@@ -72,10 +101,10 @@ func main() {
 				Run:   command.Adapt(runIntrospect),
 			},
 			{
-				Name:  "claim",
-				Usage: "claim bus-name",
-				Help:  "Claim ownership of a bus name",
-				Run:   command.Adapt(runClaim),
+				Name:  "serve-peer",
+				Usage: "serve-peer",
+				Help:  "Serve the org.freedesktop.DBus.Peer interface",
+				Run:   command.Adapt(runServePeer),
 			},
 
 			command.HelpCommand(nil),
@@ -214,30 +243,30 @@ func runIntrospect(env *command.Env, peer, path string) error {
 	return nil
 }
 
-func runClaim(env *command.Env, name string) error {
+func runServePeer(env *command.Env) error {
 	conn, err := busConn(env.Context())
 	if err != nil {
 		return fmt.Errorf("connecting to bus: %w", err)
 	}
 	defer conn.Close()
 
-	claim, err := conn.Claim(name, dbus.ClaimOptions{})
-	if err != nil {
-		return fmt.Errorf("Claiming name: %w", err)
-	}
-	defer claim.Close()
-
-	for {
-		select {
-		case <-env.Context().Done():
-			log.Println("shutdown")
-			return nil
-		case owner := <-claim.Chan():
-			if owner {
-				fmt.Println("Became owner of ", name)
-			} else {
-				fmt.Println("Lost ownership of ", name)
-			}
+	conn.Handle("org.freedesktop.DBus.Peer", "Ping", func(ctx context.Context, path dbus.ObjectPath) error {
+		sender, ok := dbus.ContextSender(ctx)
+		if !ok {
+			panic("no sender in context?")
 		}
-	}
+		fmt.Printf("Got ping on %s from %s\n", path, sender)
+		return nil
+	})
+	conn.Handle("org.freedesktop.DBus.Peer", "GetMachineId", func(ctx context.Context, path dbus.ObjectPath) (string, error) {
+		bs, err := os.ReadFile("/etc/machine-id")
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(bs)), nil
+	})
+
+	<-env.Context().Done()
+	fmt.Println("shutdown")
+	return nil
 }

@@ -51,7 +51,8 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 			Order:  fragments.NativeEndian,
 			Mapper: encoderFor,
 		},
-		calls: map[uint32]*pendingCall{},
+		calls:    map[uint32]*pendingCall{},
+		handlers: map[interfaceMethod]handlerFunc{},
 	}
 	ret.bus = ret.
 		Peer("org.freedesktop.DBus").
@@ -86,6 +87,12 @@ type Conn struct {
 	lastSerial uint32
 	watchers   mapset.Set[*Watcher]
 	claims     mapset.Set[*Claim]
+	handlers   map[interfaceMethod]handlerFunc
+}
+
+type interfaceMethod struct {
+	Interface string
+	Method    string
 }
 
 type pendingCall struct {
@@ -104,11 +111,11 @@ func (c *Conn) Close() error {
 	)
 	{
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		c.closed = true
 		pend, c.calls = c.calls, nil
 		ws, c.watchers = c.watchers, nil
 		cs, c.claims = c.claims, nil
+		c.mu.Unlock()
 	}
 	for c := range maps.Values(pend) {
 		c.err = net.ErrClosed
@@ -144,9 +151,10 @@ func (c *Conn) writeMsg(ctx context.Context, hdr *header, body any) error {
 	defer c.writeMu.Unlock()
 
 	var files []*os.File
+	c.encBody = c.encBody[:0]
 	if body != nil {
 		ctx := withContextPutFiles(ctx, &files)
-		c.enc.Out = c.encBody[:0]
+		c.enc.Out = c.encBody
 		if err := c.enc.Value(ctx, body); err != nil {
 			return err
 		}
@@ -157,8 +165,8 @@ func (c *Conn) writeMsg(ctx context.Context, hdr *header, body any) error {
 		hdr.Length = uint32(len(c.enc.Out))
 		hdr.Signature = sig.asMsgBody()
 		hdr.NumFDs = uint32(len(files))
+		c.encBody = c.enc.Out
 	}
-	c.encBody = c.enc.Out
 
 	c.enc.Out = c.encHdr[:0]
 	if err := c.enc.Value(ctx, hdr); err != nil {
@@ -235,12 +243,18 @@ func (c *Conn) dispatchMsg() error {
 		ctx = withContextFiles(ctx, msg.files)
 	}
 	if msg.Sender != "" && msg.Path != "" && msg.Interface != "" {
-		ctx = withContextSender(ctx, c.Peer(msg.Sender).Object(msg.Path).Interface(msg.Interface))
+		ctx = withContextEmitter(ctx, c.Peer(msg.Sender).Object(msg.Path).Interface(msg.Interface))
+	}
+	if msg.Sender != "" {
+		ctx = withContextSender(ctx, c.Peer(msg.Sender))
+	}
+	if msg.Destination != "" {
+		ctx = withContextDestination(ctx, msg.Destination)
 	}
 
 	switch msg.Type {
 	case msgTypeCall:
-		log.Printf("TODO: CALL")
+		go c.dispatchCall(ctx, msg)
 	case msgTypeReturn:
 		return c.dispatchReturn(ctx, msg)
 	case msgTypeError:
@@ -249,6 +263,42 @@ func (c *Conn) dispatchMsg() error {
 		return c.dispatchSignal(ctx, msg)
 	}
 	return nil
+}
+
+func (c *Conn) dispatchCall(ctx context.Context, msg *msg) {
+	handler, serial := func() (handlerFunc, uint32) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.closed {
+			return nil, 0
+		}
+		handler := c.handlers[interfaceMethod{msg.Interface, msg.Member}]
+		c.lastSerial++
+		return handler, c.lastSerial
+	}()
+
+	respHdr := &header{
+		Type:        msgTypeReturn,
+		Version:     1,
+		Serial:      serial,
+		Destination: msg.Sender,
+		ReplySerial: msg.Serial,
+	}
+	if handler == nil {
+		respHdr.Type = msgTypeError
+		respHdr.ErrName = "org.freedesktop.DBus.Error.Failed"
+		c.writeMsg(ctx, respHdr, "no such method")
+		return
+	}
+
+	resp, err := handler(ctx, msg.Path, &msg.body)
+	if err != nil {
+		respHdr.Type = msgTypeError
+		respHdr.ErrName = "org.freedesktop.DBus.Error.Failed"
+		c.writeMsg(ctx, respHdr, err.Error())
+		return
+	}
+	c.writeMsg(ctx, respHdr, resp)
 }
 
 func (c *Conn) dispatchReturn(ctx context.Context, msg *msg) error {
@@ -264,8 +314,6 @@ func (c *Conn) dispatchReturn(ctx context.Context, msg *msg) error {
 		// Response to a canceled call
 		return nil
 	}
-
-	ctx = withContextSender(ctx, pending.iface)
 
 	if pending.resp != nil {
 		if err := msg.body.Value(ctx, pending.resp); err != nil {
@@ -318,7 +366,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
 		signalType = msg.Signature.Type()
 	}
 
-	sender, _ := ContextSender(ctx)
+	emitter, _ := ContextEmitter(ctx)
 
 	var signal reflect.Value
 	if signalType != nil {
@@ -333,7 +381,7 @@ func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for w := range c.watchers {
-		w.deliver(sender, &msg.header, signal)
+		w.deliver(emitter, &msg.header, signal)
 	}
 
 	return nil
@@ -435,5 +483,109 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		return pending.err
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+func (c *Conn) Handle(interfaceName, methodName string, fn any) {
+	handler := handlerForFunc(fn)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.handlers[interfaceMethod{interfaceName, methodName}] = handler
+}
+
+type handlerFunc func(ctx context.Context, object ObjectPath, req *fragments.Decoder) (any, error)
+
+func handlerForFunc(fn any) handlerFunc {
+	v := reflect.ValueOf(fn)
+	if !v.IsValid() {
+		panic(errors.New("nil handler function given to Handle"))
+	}
+	t := v.Type()
+	if t.Kind() != reflect.Func {
+		panic(fmt.Errorf("Handle called with non-function handler type %s", t))
+	}
+	ni, no := t.NumIn(), t.NumOut()
+
+	const msgInvalidHandlerSignature = "invalid signature %s for handler func, valid signatures are:\n  func(context.Context, dbus.ObjectPath, ReqT) (RespT, error)\n  func(context.Context, dbus.ObjectPath) (RespT, error)\n  func(context.Context, dbus.ObjectPath, ReqT) error\n  func(context.Context, dbus.ObjectPath) error"
+
+	if ni < 2 || ni > 3 || no < 1 || no > 2 {
+		panic(fmt.Errorf(msgInvalidHandlerSignature, t))
+	}
+	if !t.In(0).Implements(reflect.TypeFor[context.Context]()) {
+		panic(fmt.Errorf(msgInvalidHandlerSignature, t))
+	}
+	if t.In(1) != reflect.TypeFor[ObjectPath]() {
+		panic(fmt.Errorf(msgInvalidHandlerSignature, t))
+	}
+	if !t.Out(no - 1).Implements(reflect.TypeFor[error]()) {
+		panic(fmt.Errorf(msgInvalidHandlerSignature, t))
+	}
+	var (
+		reqDec fragments.DecoderFunc
+		err    error
+	)
+	if ni == 3 {
+		reqDec, err = decoderFor(t.In(2))
+		if err != nil {
+			panic(fmt.Errorf("request type %s is not a valid DBus type: %w", t.In(1), err))
+		}
+	}
+	if no == 2 {
+		if _, err = encoderFor(t.Out(0)); err != nil {
+			if err != nil {
+				panic(fmt.Errorf("response type %s is not a valid DBus type: %w", t.Out(0), err))
+			}
+		}
+	}
+
+	type s struct{ numIn, numOut int }
+	switch (s{ni, no}) {
+	case s{2, 1}:
+		handler := fn.(func(context.Context, ObjectPath) error)
+		return func(ctx context.Context, obj ObjectPath, req *fragments.Decoder) (any, error) {
+			return nil, handler(ctx, obj)
+		}
+	case s{2, 2}:
+		return func(ctx context.Context, obj ObjectPath, req *fragments.Decoder) (any, error) {
+			rets := v.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(obj)})
+			if err, ok := rets[1].Interface().(error); ok && err != nil {
+				return nil, err
+			}
+			return rets[0].Interface(), nil
+		}
+	case s{3, 1}:
+		return func(ctx context.Context, obj ObjectPath, req *fragments.Decoder) (any, error) {
+			body := reflect.New(t.In(1))
+			if err := reqDec(ctx, req, body); err != nil {
+				return nil, err
+			}
+			rets := v.Call([]reflect.Value{
+				reflect.ValueOf(ctx),
+				reflect.ValueOf(obj),
+				body.Elem(),
+			})
+			if err, ok := rets[0].Interface().(error); ok && err != nil {
+				return nil, err
+			}
+			return rets[1].Interface(), nil
+		}
+	case s{3, 2}:
+		return func(ctx context.Context, obj ObjectPath, req *fragments.Decoder) (any, error) {
+			body := reflect.New(t.In(1))
+			if err := reqDec(ctx, req, body); err != nil {
+				return nil, err
+			}
+			rets := v.Call([]reflect.Value{
+				reflect.ValueOf(ctx),
+				reflect.ValueOf(obj),
+				body.Elem(),
+			})
+			if err, ok := rets[1].Interface().(error); ok && err != nil {
+				return nil, err
+			}
+			return rets[0].Interface(), nil
+		}
+	default:
+		panic("unreachable")
 	}
 }

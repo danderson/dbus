@@ -8,9 +8,28 @@ import (
 	"testing"
 )
 
-func TestContextSender(t *testing.T) {
+func TestContextEmitter(t *testing.T) {
 	var conn *Conn
 	want := conn.Peer("foo").Object("/bar").Interface("qux")
+	ctx := withContextEmitter(context.Background(), want)
+
+	got, ok := ContextEmitter(ctx)
+	if !ok {
+		t.Fatal("emitter not found in context")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("wrong emitter, got %#v want %#v", got, want)
+	}
+
+	got, ok = ContextEmitter(context.Background())
+	if ok {
+		t.Fatalf("got emitter %#v from context with no emitter", got)
+	}
+}
+
+func TestContextSender(t *testing.T) {
+	var conn *Conn
+	want := conn.Peer("foo")
 	ctx := withContextSender(context.Background(), want)
 
 	got, ok := ContextSender(ctx)
@@ -24,6 +43,24 @@ func TestContextSender(t *testing.T) {
 	got, ok = ContextSender(context.Background())
 	if ok {
 		t.Fatalf("got sender %#v from context with no sender", got)
+	}
+}
+
+func TestContextDestination(t *testing.T) {
+	want := "foo"
+	ctx := withContextDestination(context.Background(), want)
+
+	got, ok := ContextDestination(ctx)
+	if !ok {
+		t.Fatal("destination not found in context")
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("wrong destination, got %#v want %#v", got, want)
+	}
+
+	got, ok = ContextDestination(context.Background())
+	if ok {
+		t.Fatalf("got destination %#v from context with no destination", got)
 	}
 }
 
