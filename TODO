@@ -10,8 +10,4 @@ use the latter for some reason.
 maybe allow unmarshaling a property into a *any, so people can get
 properties of unknown type and then reflect on the output.
 
-matcher logic needs to handle pointers properly, throughout. I'm not
-giving it any thought in the first pass while I nail down the API
-shape.
-
 Export fragment mapper funcs for people doing custom encoding stuff.

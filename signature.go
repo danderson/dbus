@@ -23,6 +23,22 @@ func (s Signature) asMsgBody() Signature {
 	return Signature{s.typ, s.str[1 : len(s.str)-1]}
 }
 
+func (s Signature) asStruct() Signature {
+	if s.IsZero() {
+		return Signature{}
+	}
+	if s.typ.Kind() == reflect.Struct {
+		return s
+	}
+	ret := reflect.StructOf([]reflect.StructField{
+		{
+			Name: "Field0",
+			Type: s.typ,
+		},
+	})
+	return Signature{ret, "(" + s.str + ")"}
+}
+
 // String returns the string encoding of the Signature, as described
 // in the DBus specification.
 func (s Signature) String() string {

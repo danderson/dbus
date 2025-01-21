@@ -14,6 +14,7 @@ import (
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
 	"github.com/danderson/dbus"
+	"github.com/kr/pretty"
 )
 
 var globalArgs struct {
@@ -200,7 +201,7 @@ func runListen(env *command.Env) error {
 		case <-env.Context().Done():
 			return nil
 		case sig := <-w.Chan():
-			fmt.Printf("Signal %s.%s from %s on object %s:\n  %v\n", sig.Sender.Name(), sig.Name, sig.Sender.Peer().Name(), sig.Sender.Object().Path(), sig.Body)
+			fmt.Printf("Signal %s.%s from %s on object %s:\n  %# v\n", sig.Sender.Name(), sig.Name, sig.Sender.Peer().Name(), sig.Sender.Object().Path(), pretty.Formatter(sig.Body))
 			if sig.Overflow {
 				fmt.Println("OVERFLOW, some signals lost")
 			}

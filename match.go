@@ -161,9 +161,10 @@ func (m *Match) matches(hdr *header, body reflect.Value) bool {
 // registered with [RegisterSignalType].
 func (m *Match) Signal(signal any) *Match {
 	t := reflect.TypeOf(signal)
-	k, ok := signalNameFor(t)
+	bt, _ := derefType(t)
+	k, ok := signalNameFor(bt)
 	if !ok {
-		panic(fmt.Errorf("unknown signal type %T", signal))
+		panic(fmt.Errorf("unknown signal type %s", bt))
 	}
 
 	sm := signalMatch{
@@ -172,29 +173,57 @@ func (m *Match) Signal(signal any) *Match {
 		stringFields: map[int]func(reflect.Value) string{},
 		objectFields: map[int]func(reflect.Value) ObjectPath{},
 	}
-	switch t.Kind() {
-	case reflect.String:
-		sm.stringFields[0] = func(v reflect.Value) string { return v.String() }
-	case reflect.Struct:
-		inf, err := getStructInfo(t)
-		if err != nil {
-			panic(fmt.Errorf("getting signal struct info for %s: %w", t, err))
-		}
-		for i, field := range inf.StructFields {
-			if field.Type == reflect.TypeFor[ObjectPath]() {
-				sm.objectFields[i] = func(v reflect.Value) ObjectPath {
-					return field.GetWithZero(v).Interface().(ObjectPath)
-				}
-			} else if field.Type.Kind() == reflect.String {
-				sm.stringFields[i] = func(v reflect.Value) string {
-					return field.GetWithZero(v).String()
-				}
-			}
+
+	inf, err := getStructInfo(bt)
+	if err != nil {
+		panic(fmt.Errorf("getting signal struct info for %s: %w", bt, err))
+	}
+	for i, field := range inf.StructFields {
+		fieldBottom, derefField := derefType(field.Type)
+		if fieldBottom == reflect.TypeFor[ObjectPath]() {
+			sm.objectFields[i] = getter[ObjectPath](field, derefField)
+		} else if fieldBottom.Kind() == reflect.String {
+			sm.stringFields[i] = getter[string](field, derefField)
 		}
 	}
 
 	m.signal = value.Just(sm)
 	return m
+}
+
+func getter[T any](f *structField, derefField bool) func(reflect.Value) T {
+	if derefField {
+		return func(v reflect.Value) T {
+			v = deref(f.GetWithZero(v))
+			if !v.IsValid() {
+				var zero T
+				return zero
+			}
+			return v.Interface().(T)
+		}
+	} else {
+		return func(v reflect.Value) T {
+			return f.GetWithZero(v).Interface().(T)
+		}
+	}
+}
+
+func derefType(t reflect.Type) (reflect.Type, bool) {
+	deref := t.Kind() == reflect.Pointer
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t, deref
+}
+
+func deref(v reflect.Value) reflect.Value {
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return reflect.Value{}
+		}
+		v = v.Elem()
+	}
+	return v
 }
 
 // Sender restricts the Match to a single sending Peer.

@@ -374,19 +374,17 @@ func (c *Conn) dispatchErr(msg *msg) error {
 func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
 	signalType := signalTypeFor(msg.Interface, msg.Member)
 	if signalType == nil {
-		signalType = msg.Signature.Type()
+		signalType = msg.Signature.asStruct().Type()
+	}
+	if signalType == nil {
+		signalType = reflect.TypeFor[struct{}]()
 	}
 
 	emitter, _ := ContextEmitter(ctx)
 
-	var signal reflect.Value
-	if signalType != nil {
-		signal = reflect.New(signalType)
-		if err := msg.body.Value(ctx, signal.Interface()); err != nil {
-			return err
-		}
-	} else {
-		signal = reflect.ValueOf(&struct{}{})
+	signal := reflect.New(signalType)
+	if err := msg.body.Value(ctx, signal.Interface()); err != nil {
+		return err
 	}
 
 	c.mu.Lock()
