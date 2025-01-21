@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"maps"
 	"net"
@@ -65,6 +66,24 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 		ret.Close()
 		return nil, fmt.Errorf("getting DBus client ID: %w", err)
 	}
+
+	// Implement the Peer interface, on all objects.
+	ret.Handle("org.freedesktop.DBus.Peer", "Ping", func(context.Context, ObjectPath) error {
+		return nil
+	})
+	uuid := sync.OnceValues(func() (string, error) {
+		bs, err := os.ReadFile("/etc/machine-id")
+		if errors.Is(err, fs.ErrNotExist) {
+			bs, err = os.ReadFile("/var/lib/dbus/machine-id")
+		}
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(bs)), nil
+	})
+	ret.Handle("org.freedesktop.DBus.Peer", "GetMachineId", func(context.Context, ObjectPath) (string, error) {
+		return uuid()
+	})
 
 	return ret, nil
 }
@@ -153,7 +172,8 @@ func (c *Conn) writeMsg(ctx context.Context, hdr *header, body any) error {
 	var files []*os.File
 	c.encBody = c.encBody[:0]
 	if body != nil {
-		ctx := withContextPutFiles(ctx, &files)
+		bodyCtx := withContextHeader(ctx, c, hdr)
+		bodyCtx = withContextFiles(bodyCtx, &files)
 		c.enc.Out = c.encBody
 		if err := c.enc.Value(ctx, body); err != nil {
 			return err
@@ -238,18 +258,9 @@ func (c *Conn) dispatchMsg() error {
 		return fmt.Errorf("received invalid header: %w", err)
 	}
 
-	ctx := context.Background()
+	ctx := withContextHeader(context.Background(), c, &msg.header)
 	if len(msg.files) > 0 {
-		ctx = withContextFiles(ctx, msg.files)
-	}
-	if msg.Sender != "" && msg.Path != "" && msg.Interface != "" {
-		ctx = withContextEmitter(ctx, c.Peer(msg.Sender).Object(msg.Path).Interface(msg.Interface))
-	}
-	if msg.Sender != "" {
-		ctx = withContextSender(ctx, c.Peer(msg.Sender))
-	}
-	if msg.Destination != "" {
-		ctx = withContextDestination(ctx, msg.Destination)
+		ctx = withContextFiles(ctx, &msg.files)
 	}
 
 	switch msg.Type {
@@ -361,7 +372,7 @@ func (c *Conn) dispatchErr(msg *msg) error {
 }
 
 func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
-	signalType := signalNameToType[signalKey{msg.Interface, msg.Member}]
+	signalType := signalTypeFor(msg.Interface, msg.Member)
 	if signalType == nil {
 		signalType = msg.Signature.Type()
 	}
@@ -486,6 +497,48 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 	}
 }
 
+// EmitSignal broadcasts signal from obj.
+//
+// The signal's type must be registered in advance with
+// [RegisterSignalType].
+func (c *Conn) EmitSignal(ctx context.Context, obj ObjectPath, signal any) error {
+	t := reflect.TypeOf(signal)
+	k, ok := signalNameFor(t)
+	if !ok {
+		return fmt.Errorf("unknown signal type %s", t)
+	}
+	serial := func() uint32 {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.closed {
+			return 0
+		}
+		c.lastSerial++
+		return c.lastSerial
+	}()
+	hdr := header{
+		Type:      msgTypeSignal,
+		Version:   1,
+		Serial:    serial,
+		Path:      obj,
+		Interface: k.Interface,
+		Member:    k.Method,
+	}
+	return c.writeMsg(ctx, &hdr, signal)
+}
+
+// Handle calls fn to handle incoming method calls to methodName on
+// interfaceName.
+//
+// fn must have one of the following type signatures, where ReqType
+// and RetType are any types compatible with DBus:
+//
+//	func(context.Context, dbus.ObjectPath) error
+//	func(context.Context, dbus.ObjectPath) (RetType, error)
+//	func(context.Context, dbus.ObjectPath, ReqType) error
+//	func(context.Context, dbus.ObjectPath, ReqType) (RetType, error)
+//
+// Handle panics if fn is not one of the above type signatures.
 func (c *Conn) Handle(interfaceName, methodName string, fn any) {
 	handler := handlerForFunc(fn)
 	c.mu.Lock()

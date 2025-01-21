@@ -8,13 +8,9 @@ import (
 
 var (
 	signalsMu        sync.Mutex
-	signalNameToType = map[signalKey]reflect.Type{}
-	signalTypeToName = map[reflect.Type]signalKey{}
+	signalNameToType = map[interfaceMethod]reflect.Type{}
+	signalTypeToName = map[reflect.Type]interfaceMethod{}
 )
-
-type signalKey struct {
-	Interface, Signal string
-}
 
 // RegisterSignalType registers T as the struct type to use when
 // decoding the body of the given signal name.
@@ -22,22 +18,36 @@ type signalKey struct {
 // RegisterSignalType panics if the signal already has a registered
 // type.
 func RegisterSignalType[T any](interfaceName, signalName string) {
-	k := signalKey{interfaceName, signalName}
+	k := interfaceMethod{interfaceName, signalName}
 	t := reflect.TypeFor[T]()
 	if t.Kind() != reflect.Struct {
-		panic(fmt.Errorf("cannot use type %s (%s) as the payload type for signal %s.%s, signal payloads must be structs", t, t.Kind(), k.Interface, k.Signal))
+		panic(fmt.Errorf("cannot use type %s (%s) as the payload type for signal %s.%s, signal payloads must be structs", t, t.Kind(), k.Interface, k.Method))
 	}
 	if _, err := SignatureFor[T](); err != nil {
-		panic(fmt.Errorf("cannot use %s as dbus type for signal %s.%s: %w", t, k.Interface, k.Signal, err))
+		panic(fmt.Errorf("cannot use %s as dbus type for signal %s.%s: %w", t, k.Interface, k.Method, err))
 	}
+
 	signalsMu.Lock()
 	defer signalsMu.Unlock()
 	if prev := signalNameToType[k]; prev != nil {
-		panic(fmt.Errorf("duplicate signal type registration for %s.%s, existing registration %s", k.Interface, k.Signal, prev))
+		panic(fmt.Errorf("duplicate signal type registration for %s.%s, existing registration %s", k.Interface, k.Method, prev))
 	}
 	if prev, ok := signalTypeToName[t]; ok {
-		panic(fmt.Errorf("duplicate signal type registration for %s, already in use by %s.%s", t, prev.Interface, prev.Signal))
+		panic(fmt.Errorf("duplicate signal type registration for %s, already in use by %s.%s", t, prev.Interface, prev.Method))
 	}
 	signalNameToType[k] = t
 	signalTypeToName[t] = k
+}
+
+func signalNameFor(t reflect.Type) (interfaceMethod, bool) {
+	signalsMu.Lock()
+	defer signalsMu.Unlock()
+	ret, ok := signalTypeToName[t]
+	return ret, ok
+}
+
+func signalTypeFor(interfaceName, signalName string) reflect.Type {
+	signalsMu.Lock()
+	defer signalsMu.Unlock()
+	return signalNameToType[interfaceMethod{interfaceName, signalName}]
 }

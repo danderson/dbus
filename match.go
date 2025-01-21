@@ -161,14 +161,14 @@ func (m *Match) matches(hdr *header, body reflect.Value) bool {
 // registered with [RegisterSignalType].
 func (m *Match) Signal(signal any) *Match {
 	t := reflect.TypeOf(signal)
-	k := signalTypeToName[t]
-	if k.Interface == "" || k.Signal == "" {
+	k, ok := signalNameFor(t)
+	if !ok {
 		panic(fmt.Errorf("unknown signal type %T", signal))
 	}
 
 	sm := signalMatch{
 		iface:        k.Interface,
-		member:       k.Signal,
+		member:       k.Method,
 		stringFields: map[int]func(reflect.Value) string{},
 		objectFields: map[int]func(reflect.Value) ObjectPath{},
 	}

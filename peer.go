@@ -21,7 +21,7 @@ func (p Peer) Conn() *Conn { return p.c }
 func (p Peer) Name() string { return p.name }
 
 func (p Peer) String() string {
-	if p.c == nil {
+	if p.name == "" {
 		return "<no peer>"
 	}
 	return p.name
