@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -47,14 +48,30 @@ var decoders cache[reflect.Type, fragments.DecoderFunc]
 // decoderFor returns the decoder func for the given type, if the type
 // is representable in the DBus wire format.
 func decoderFor(t reflect.Type) (ret fragments.DecoderFunc, err error) {
+	d := decoderGen{}
+	return d.get(t)
+}
+
+type decoderGen struct {
+	stack []reflect.Type
+}
+
+func (d *decoderGen) get(t reflect.Type) (ret fragments.DecoderFunc, err error) {
 	if ret, err := decoders.Get(t); err == nil {
 		return ret, nil
 	} else if !errors.Is(err, errNotFound) {
 		return nil, err
 	}
+
+	if slices.Contains(d.stack, t) {
+		return nil, fmt.Errorf("cannot represent recursive type %s in dbus", t)
+	}
+	d.stack = append(d.stack, t)
+
 	// Note, defer captures the type value before we mess with it
 	// below.
 	defer func(t reflect.Type) {
+		d.stack = d.stack[:len(d.stack)-1]
 		if err != nil {
 			decoders.SetErr(t, err)
 		} else {
@@ -83,50 +100,50 @@ func decoderFor(t reflect.Type) (ret fragments.DecoderFunc, err error) {
 			return nil, typeErr(t, "refusing to use dbus.Unmarshaler implementation with value receiver, Unmarshalers must use pointer receivers.")
 		} else {
 			// First case, can unmarshal into pointer.
-			return newMarshalDecoder(t), nil
+			return d.newMarshalDecoder(t), nil
 		}
 	} else if !isPtr && reflect.PointerTo(t).Implements(unmarshalerType) {
 		// Second case, unmarshal into value.
-		return newAddrMarshalDecoder(t), nil
+		return d.newAddrMarshalDecoder(t), nil
 	}
 
 	switch t.Kind() {
 	case reflect.Pointer:
 		// Note, pointers to Unmarshaler are handled above.
-		return newPtrDecoder(t)
+		return d.newPtrDecoder(t)
 	case reflect.Bool:
-		return newBoolDecoder(), nil
+		return d.newBoolDecoder(), nil
 	case reflect.Int, reflect.Uint:
 		return nil, typeErr(t, "int and uint aren't portable, use fixed width integers")
 	case reflect.Int8:
 		return nil, typeErr(t, "int8 has no corresponding DBus type, use uint8 instead")
 	case reflect.Int16, reflect.Int32, reflect.Int64:
-		return newIntDecoder(t), nil
+		return d.newIntDecoder(t), nil
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return newUintDecoder(t), nil
+		return d.newUintDecoder(t), nil
 	case reflect.Float32, reflect.Float64:
-		return newFloatDecoder(), nil
+		return d.newFloatDecoder(), nil
 	case reflect.String:
-		return newStringDecoder(), nil
+		return d.newStringDecoder(), nil
 	case reflect.Slice, reflect.Array:
-		return newSliceDecoder(t)
+		return d.newSliceDecoder(t)
 	case reflect.Struct:
-		return newStructDecoder(t)
+		return d.newStructDecoder(t)
 	case reflect.Map:
-		return newMapDecoder(t)
+		return d.newMapDecoder(t)
 	}
 
 	return nil, typeErr(t, "no dbus mapping for type")
 }
 
-func newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
-	ptr := newMarshalDecoder(reflect.PointerTo(t))
+func (d *decoderGen) newAddrMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
+	ptr := d.newMarshalDecoder(reflect.PointerTo(t))
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		return ptr(ctx, d, v.Addr())
 	}
 }
 
-func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
+func (d *decoderGen) newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		if v.IsNil() {
 			elem := reflect.New(t.Elem())
@@ -137,9 +154,9 @@ func newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 }
 
-func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func (d *decoderGen) newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	elem := t.Elem()
-	elemDec, err := decoderFor(elem)
+	elemDec, err := d.get(elem)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +178,7 @@ func newPtrDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	return fn, nil
 }
 
-func newBoolDecoder() fragments.DecoderFunc {
+func (d *decoderGen) newBoolDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		u, err := d.Uint32()
 		if err != nil {
@@ -172,7 +189,7 @@ func newBoolDecoder() fragments.DecoderFunc {
 	}
 }
 
-func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
+func (d *decoderGen) newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
 		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
@@ -215,7 +232,7 @@ func newIntDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 }
 
-func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
+func (d *decoderGen) newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	switch t.Size() {
 	case 1:
 		return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
@@ -258,7 +275,7 @@ func newUintDecoder(t reflect.Type) fragments.DecoderFunc {
 	}
 }
 
-func newFloatDecoder() fragments.DecoderFunc {
+func (d *decoderGen) newFloatDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		u64, err := d.Uint64()
 		if err != nil {
@@ -269,7 +286,7 @@ func newFloatDecoder() fragments.DecoderFunc {
 	}
 }
 
-func newStringDecoder() fragments.DecoderFunc {
+func (d *decoderGen) newStringDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		s, err := d.String()
 		if err != nil {
@@ -280,7 +297,7 @@ func newStringDecoder() fragments.DecoderFunc {
 	}
 }
 
-func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func (d *decoderGen) newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	if t.Elem().Kind() == reflect.Uint8 {
 		fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 			bs, err := d.Bytes()
@@ -293,7 +310,7 @@ func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 		return fn, nil
 	}
 
-	elemDec, err := decoderFor(t.Elem())
+	elemDec, err := d.get(t.Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +336,7 @@ func newSliceDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	return fn, nil
 }
 
-func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func (d *decoderGen) newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	fs, err := getStructInfo(t)
 	if err != nil {
 		return nil, typeErr(t, "getting struct info: %w", err)
@@ -327,7 +344,7 @@ func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 
 	var frags []fragments.DecoderFunc
 	for _, f := range fs.StructFields {
-		fDec, err := newStructFieldDecoder(f)
+		fDec, err := d.newStructFieldDecoder(f)
 		if err != nil {
 			return nil, err
 		}
@@ -349,12 +366,12 @@ func newStructDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 
 // Note, the returned fragment decoder expects to be given the entire
 // struct, not just the one field being decoded.
-func newStructFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
+func (d *decoderGen) newStructFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
 	if f.IsVarDict() {
-		return newVarDictFieldDecoder(f)
+		return d.newVarDictFieldDecoder(f)
 	}
 
-	fDec, err := decoderFor(f.Type)
+	fDec, err := d.get(f.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -367,12 +384,12 @@ func newStructFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
 
 // Note, the returned fragment decoder expects to be given the entire
 // struct, not just the one field being decoded.
-func newVarDictFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
-	kDec, err := decoderFor(f.Type.Key())
+func (d *decoderGen) newVarDictFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
+	kDec, err := d.get(f.Type.Key())
 	if err != nil {
 		return nil, err
 	}
-	vDec, err := decoderFor(variantType)
+	vDec, err := d.get(variantType)
 	if err != nil {
 		return nil, err
 	}
@@ -444,17 +461,17 @@ func newVarDictFieldDecoder(f *structField) (fragments.DecoderFunc, error) {
 	return fn, nil
 }
 
-func newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
+func (d *decoderGen) newMapDecoder(t reflect.Type) (fragments.DecoderFunc, error) {
 	kt := t.Key()
 	if !mapKeyKinds.Has(kt.Kind()) {
 		return nil, typeErr(t, "invalid map key type %s", kt)
 	}
-	kDec, err := decoderFor(kt)
+	kDec, err := d.get(kt)
 	if err != nil {
 		return nil, err
 	}
 	vt := t.Elem()
-	vDec, err := decoderFor(vt)
+	vDec, err := d.get(vt)
 	if err != nil {
 		return nil, err
 	}

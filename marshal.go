@@ -31,14 +31,29 @@ var marshalerType = reflect.TypeFor[Marshaler]()
 var encoders cache[reflect.Type, fragments.EncoderFunc]
 
 func encoderFor(t reflect.Type) (ret fragments.EncoderFunc, err error) {
+	e := encoderGen{}
+	return e.get(t)
+}
+
+type encoderGen struct {
+	stack []reflect.Type
+}
+
+func (e *encoderGen) get(t reflect.Type) (ret fragments.EncoderFunc, err error) {
 	if ret, err := encoders.Get(t); err == nil {
 		return ret, nil
 	} else if !errors.Is(err, errNotFound) {
 		return nil, err
 	}
+	if slices.Contains(e.stack, t) {
+		return nil, fmt.Errorf("cannot represent recursive type %s in dbus", t)
+	}
+	e.stack = append(e.stack, t)
+
 	// Note, defer captures the type value in case it gets messed with
 	// below.
 	defer func(t reflect.Type) {
+		e.stack = e.stack[:len(e.stack)-1]
 		if err != nil {
 			encoders.SetErr(t, err)
 		} else {
@@ -50,44 +65,44 @@ func encoderFor(t reflect.Type) (ret fragments.EncoderFunc, err error) {
 	// a value copy by using it. But we can only use it for
 	// addressable values, which requires an additional runtime check.
 	if t.Kind() != reflect.Pointer && reflect.PointerTo(t).Implements(marshalerType) {
-		return newCondAddrMarshalEncoder(t), nil
+		return e.newCondAddrMarshalEncoder(t), nil
 	} else if t.Implements(marshalerType) {
-		return newMarshalEncoder(), nil
+		return e.newMarshalEncoder(), nil
 	}
 
 	switch t.Kind() {
 	case reflect.Pointer:
-		return newPtrEncoder(t)
+		return e.newPtrEncoder(t)
 	case reflect.Bool:
-		return newBoolEncoder(), nil
+		return e.newBoolEncoder(), nil
 	case reflect.Int, reflect.Uint:
 		return nil, typeErr(t, "int and uint aren't portable, use fixed width integers")
 	case reflect.Int8:
 		return nil, typeErr(t, "int8 has no corresponding DBus type, use uint8 instead")
 	case reflect.Int16, reflect.Int32, reflect.Int64:
-		return newIntEncoder(t), nil
+		return e.newIntEncoder(t), nil
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return newUintEncoder(t), nil
+		return e.newUintEncoder(t), nil
 	case reflect.Float32:
 		return nil, typeErr(t, "float32 has no corresponding DBus type, use float64 instead")
 	case reflect.Float64:
-		return newFloatEncoder(), nil
+		return e.newFloatEncoder(), nil
 	case reflect.String:
-		return newStringEncoder(), nil
+		return e.newStringEncoder(), nil
 	case reflect.Slice, reflect.Array:
-		return newSliceEncoder(t)
+		return e.newSliceEncoder(t)
 	case reflect.Struct:
-		return newStructEncoder(t)
+		return e.newStructEncoder(t)
 	case reflect.Map:
-		return newMapEncoder(t)
+		return e.newMapEncoder(t)
 	}
 	return nil, typeErr(t, "no dbus mapping for type")
 }
 
-func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
-	ptr := newMarshalEncoder()
+func (e *encoderGen) newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
+	ptr := e.newMarshalEncoder()
 	if t.Implements(marshalerType) {
-		val := newMarshalEncoder()
+		val := e.newMarshalEncoder()
 		return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 			if v.CanAddr() {
 				return ptr(ctx, e, v.Addr())
@@ -105,15 +120,15 @@ func newCondAddrMarshalEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 }
 
-func newMarshalEncoder() fragments.EncoderFunc {
+func (e *encoderGen) newMarshalEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		m := v.Interface().(Marshaler)
 		return m.MarshalDBus(ctx, e)
 	}
 }
 
-func newPtrEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
-	elemEnc, err := encoderFor(t.Elem())
+func (e *encoderGen) newPtrEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
+	elemEnc, err := e.get(t.Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +141,7 @@ func newPtrEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 	return fn, nil
 }
 
-func newBoolEncoder() fragments.EncoderFunc {
+func (e *encoderGen) newBoolEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		val := uint32(0)
 		if v.Bool() {
@@ -137,7 +152,7 @@ func newBoolEncoder() fragments.EncoderFunc {
 	}
 }
 
-func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
+func (e *encoderGen) newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
 	case 2:
 		return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
@@ -159,7 +174,7 @@ func newIntEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 }
 
-func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
+func (e *encoderGen) newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 	switch t.Size() {
 	case 1:
 		return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
@@ -186,21 +201,21 @@ func newUintEncoder(t reflect.Type) fragments.EncoderFunc {
 	}
 }
 
-func newFloatEncoder() fragments.EncoderFunc {
+func (e *encoderGen) newFloatEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		e.Uint64(math.Float64bits(v.Float()))
 		return nil
 	}
 }
 
-func newStringEncoder() fragments.EncoderFunc {
+func (e *encoderGen) newStringEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		e.String(v.String())
 		return nil
 	}
 }
 
-func newSliceEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
+func (e *encoderGen) newSliceEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 	if t.Elem().Kind() == reflect.Uint8 {
 		// Fast path for []byte
 		return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
@@ -209,7 +224,7 @@ func newSliceEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 		}, nil
 	}
 
-	elemEnc, err := encoderFor(t.Elem())
+	elemEnc, err := e.get(t.Elem())
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +243,7 @@ func newSliceEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 	return fn, nil
 }
 
-func newStructEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
+func (e *encoderGen) newStructEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 	fs, err := getStructInfo(t)
 	if err != nil {
 		return nil, fmt.Errorf("getting struct info for %s: %w", t, err)
@@ -236,7 +251,7 @@ func newStructEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 
 	var frags []fragments.EncoderFunc
 	for _, f := range fs.StructFields {
-		fEnc, err := newStructFieldEncoder(f)
+		fEnc, err := e.newStructFieldEncoder(f)
 		if err != nil {
 			return nil, err
 		}
@@ -259,12 +274,12 @@ func newStructEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 
 // Note, the returned fragment encoder expects to be given the entire
 // struct, not just the one field being encoded.
-func newStructFieldEncoder(f *structField) (fragments.EncoderFunc, error) {
+func (e *encoderGen) newStructFieldEncoder(f *structField) (fragments.EncoderFunc, error) {
 	if f.IsVarDict() {
-		return newVarDictFieldEncoder(f)
+		return e.newVarDictFieldEncoder(f)
 	}
 
-	fEnc, err := encoderFor(f.Type)
+	fEnc, err := e.get(f.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -277,12 +292,12 @@ func newStructFieldEncoder(f *structField) (fragments.EncoderFunc, error) {
 
 // Note, the returned fragment encoder expects to be given the entire
 // struct, not just the one field being encoded.
-func newVarDictFieldEncoder(f *structField) (fragments.EncoderFunc, error) {
-	kEnc, err := encoderFor(f.Type.Key())
+func (e *encoderGen) newVarDictFieldEncoder(f *structField) (fragments.EncoderFunc, error) {
+	kEnc, err := e.get(f.Type.Key())
 	if err != nil {
 		return nil, err
 	}
-	vEnc, err := encoderFor(variantType)
+	vEnc, err := e.get(variantType)
 	if err != nil {
 		return nil, err
 	}
@@ -342,17 +357,17 @@ func newVarDictFieldEncoder(f *structField) (fragments.EncoderFunc, error) {
 	return fn, nil
 }
 
-func newMapEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
+func (e *encoderGen) newMapEncoder(t reflect.Type) (fragments.EncoderFunc, error) {
 	kt := t.Key()
 	if !mapKeyKinds.Has(kt.Kind()) {
 		return nil, typeErr(t, "invalid map key type %s", kt)
 	}
-	kEnc, err := encoderFor(kt)
+	kEnc, err := e.get(kt)
 	if err != nil {
 		return nil, err
 	}
 	vt := t.Elem()
-	vEnc, err := encoderFor(vt)
+	vEnc, err := e.get(vt)
 	if err != nil {
 		return nil, err
 	}

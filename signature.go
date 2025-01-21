@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/danderson/dbus/fragments"
@@ -230,20 +231,26 @@ var signerType = reflect.TypeFor[signer]()
 
 // SignatureFor returns the Signature for the given type.
 func SignatureFor[T any]() (Signature, error) {
-	return signatureFor(reflect.TypeFor[T]())
+	return signatureFor(reflect.TypeFor[T](), nil)
 }
 
 // SignatureOf returns the Signature of the given value.
 func SignatureOf(v any) (Signature, error) {
-	return signatureFor(reflect.TypeOf(v))
+	return signatureFor(reflect.TypeOf(v), nil)
 }
 
-func signatureFor(t reflect.Type) (sig Signature, err error) {
+func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err error) {
 	if ret, err := typeToSignature.Get(t); err == nil {
 		return ret, nil
 	} else if !errors.Is(err, errNotFound) {
 		return Signature{}, err
 	}
+
+	if slices.Contains(stack, t) {
+		return Signature{}, errors.New("recursive type signature")
+	}
+	stack = append(stack, t)
+
 	// Note, defer captures the type value before we mess with it
 	// below.
 	defer func(t reflect.Type) {
@@ -282,7 +289,7 @@ func signatureFor(t reflect.Type) (sig Signature, err error) {
 
 	switch t.Kind() {
 	case reflect.Slice, reflect.Array:
-		es, err := signatureFor(t.Elem())
+		es, err := signatureFor(t.Elem(), stack)
 		if err != nil {
 			return Signature{}, err
 		}
@@ -303,11 +310,11 @@ func signatureFor(t reflect.Type) (sig Signature, err error) {
 		case reflect.Struct:
 			return Signature{}, typeErr(t, "map keys cannot be structs")
 		}
-		ks, err := signatureFor(k)
+		ks, err := signatureFor(k, stack)
 		if err != nil {
 			return Signature{}, err
 		}
-		vs, err := signatureFor(t.Elem())
+		vs, err := signatureFor(t.Elem(), stack)
 		if err != nil {
 			return Signature{}, err
 		}
@@ -322,7 +329,7 @@ func signatureFor(t reflect.Type) (sig Signature, err error) {
 		for _, f := range fs.StructFields {
 			// Descend through all fields, to look for cyclic
 			// references.
-			fieldSig, err := signatureFor(f.Type)
+			fieldSig, err := signatureFor(f.Type, stack)
 			if err != nil {
 				return Signature{}, err
 			}

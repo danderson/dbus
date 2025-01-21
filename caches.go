@@ -11,12 +11,11 @@ type cache[K, V any] struct {
 }
 
 var errNotFound = errors.New("key not found in cache")
-var errRecursion = errors.New("recursive cache lookup")
 
 // Get returns the value associated with t, constructing it if
 // necessary.
 func (c *cache[K, V]) Get(k K) (ret V, err error) {
-	ent, loaded := c.m.LoadOrStore(k, errRecursion)
+	ent, loaded := c.m.Load(k)
 	if !loaded {
 		var zero V
 		return zero, errNotFound
