@@ -1,7 +1,5 @@
 Figure out an approach to fuzz Marshal/Unmarshal.
 
-finish implementing Conn for incoming calls and signals
-
 skip struct padding for structs that are entirely vardict
 encoded. Currently can't write a struct that is a pure vardict and use
 it where dbus wants a dict, it'll get padded wrong.
