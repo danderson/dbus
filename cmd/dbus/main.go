@@ -14,7 +14,6 @@ import (
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
 	"github.com/danderson/dbus"
-	"github.com/kr/pretty"
 )
 
 var globalArgs struct {
@@ -238,7 +237,12 @@ func runIntrospect(env *command.Env, peer, path string) error {
 	if err != nil {
 		return fmt.Errorf("Pinging %s: %w", peer, err)
 	}
-	pretty.Print(desc)
+	slices.SortFunc(desc.Interfaces, func(a, b *dbus.InterfaceDescription) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	for _, iface := range desc.Interfaces {
+		fmt.Println(iface)
+	}
 
 	return nil
 }

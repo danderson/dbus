@@ -51,13 +51,13 @@ func (o Object) Interface(name string) Interface {
 // implement the [org.freedesktop.DBus.Introspectable] interface.
 //
 // [org.freedesktop.DBus.Introspectable]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-introspectable
-func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*Description, error) {
+func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*ObjectDescription, error) {
 	var resp string
 	if err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.Introspectable", "Introspect", nil, &resp, opts...); err != nil {
 		return nil, err
 	}
 	fmt.Println(resp)
-	var ret Description
+	var ret ObjectDescription
 	if err := xml.Unmarshal([]byte(resp), &ret); err != nil {
 		return nil, err
 	}
