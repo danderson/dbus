@@ -9,9 +9,32 @@ import (
 )
 
 type ObjectDescription struct {
-	Name       string                  `xml:"name,attr"`
-	Interfaces []*InterfaceDescription `xml:"interface"`
-	Children   []*ObjectDescription    `xml:"node"`
+	Name       string
+	Interfaces map[string]*InterfaceDescription
+	Children   []string
+}
+
+func (o *ObjectDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var raw struct {
+		Name       string                  `xml:"name,attr"`
+		Interfaces []*InterfaceDescription `xml:"interface"`
+		Children   []struct {
+			Name string `xml:"name,attr"`
+		} `xml:"node"`
+	}
+	if err := d.DecodeElement(&raw, &start); err != nil {
+		return err
+	}
+	o.Name = raw.Name
+	o.Interfaces = make(map[string]*InterfaceDescription, len(raw.Interfaces))
+	for _, iface := range raw.Interfaces {
+		o.Interfaces[iface.Name] = iface
+	}
+	o.Children = make([]string, 0, len(raw.Children))
+	for _, v := range raw.Children {
+		o.Children = append(o.Children, v.Name)
+	}
+	return nil
 }
 
 type InterfaceDescription struct {

@@ -56,7 +56,6 @@ func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*ObjectDesc
 	if err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.Introspectable", "Introspect", nil, &resp, opts...); err != nil {
 		return nil, err
 	}
-	fmt.Println(resp)
 	var ret ObjectDescription
 	if err := xml.Unmarshal([]byte(resp), &ret); err != nil {
 		return nil, err

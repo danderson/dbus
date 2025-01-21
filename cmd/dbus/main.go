@@ -4,16 +4,21 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/signal"
+	"path"
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
+	"github.com/creachadair/taskgroup"
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/internal/dbusgen"
 	"github.com/kr/pretty"
 )
 
@@ -66,9 +71,21 @@ func main() {
 		Commands: []*command.C{
 			{
 				Name:  "list",
-				Usage: "list",
-				Help:  "List peers connected to the bus",
-				Run:   command.Adapt(runList),
+				Usage: "list args...",
+				Commands: []*command.C{
+					{
+						Name:  "peers",
+						Usage: "list peers",
+						Help:  "List peers connected to the bus",
+						Run:   command.Adapt(runListPeers),
+					},
+					{
+						Name:  "interfaces",
+						Usage: "list interfaces",
+						Help:  "List interfaces discoverable on the bus",
+						Run:   command.Adapt(runListInterfaces),
+					},
+				},
 			},
 			{
 				Name:  "ping",
@@ -106,6 +123,13 @@ func main() {
 				Help:  "Serve the org.freedesktop.DBus.Peer interface",
 				Run:   command.Adapt(runServePeer),
 			},
+			{
+				Name:     "generate",
+				Usage:    "generate interface",
+				Help:     "Generate an interface implementation from introspection data",
+				SetFlags: command.Flags(flax.MustBind, &generateArgs),
+				Run:      command.Adapt(runGenerate),
+			},
 
 			command.HelpCommand(nil),
 			command.VersionCommand(),
@@ -118,7 +142,7 @@ func main() {
 	command.RunOrFail(env, os.Args[1:])
 }
 
-func runList(env *command.Env) error {
+func runListPeers(env *command.Env) error {
 	conn, err := busConn(env.Context())
 	if err != nil {
 		return fmt.Errorf("connecting to bus: %w", err)
@@ -136,6 +160,81 @@ func runList(env *command.Env) error {
 	for _, n := range names {
 		fmt.Println(n)
 	}
+
+	return nil
+}
+
+func runListInterfaces(env *command.Env) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	peers, err := conn.Peers(env.Context())
+	if err != nil {
+		return fmt.Errorf("listing peers: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(env.Context(), time.Minute)
+	defer cancel()
+
+	ifaces := map[string]int{}
+	objs := map[dbus.ObjectPath]bool{}
+	var errs []error
+
+	type res struct {
+		iface dbus.Interface
+		err   error
+	}
+	var g taskgroup.Group
+	c := taskgroup.Gather(g.Go, func(res res) {
+		if res.err != nil {
+			errs = append(errs, res.err)
+		} else {
+			ifaces[res.iface.Name()]++
+			objs[res.iface.Object().Path()] = true
+		}
+	})
+
+	var scanObj func(dbus.Object)
+	scanObj = func(obj dbus.Object) {
+		c.Report(func(report func(res)) error {
+			desc, err := obj.Introspect(ctx)
+			if err != nil {
+				report(res{err: fmt.Errorf("introspecting %s: %v", obj, err)})
+				return nil
+			}
+			for iface := range desc.Interfaces {
+				report(res{iface: obj.Interface(iface)})
+			}
+			for _, child := range desc.Children {
+				scanObj(obj.Peer().Object(obj.Path().Child(child)))
+			}
+			return nil
+		})
+	}
+	for _, peer := range peers {
+		if strings.HasPrefix(peer.Name(), ":") {
+			continue
+		}
+		scanObj(peer.Object("/"))
+	}
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	for _, err := range errs {
+		fmt.Println(err)
+	}
+	ks := slices.SortedFunc(maps.Keys(ifaces), func(a, b string) int {
+		return cmp.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	for _, k := range ks {
+		fmt.Printf("%s (%d objects)\n", k, ifaces[k])
+	}
+	fmt.Printf("Total: %d interfaces implemented on %d objects\n", len(ifaces), len(objs))
 
 	return nil
 }
@@ -227,22 +326,24 @@ func runFeatures(env *command.Env) error {
 	return nil
 }
 
-func runIntrospect(env *command.Env, peer, path string) error {
+func runIntrospect(env *command.Env, peer, objectPath string) error {
 	conn, err := busConn(env.Context())
 	if err != nil {
 		return fmt.Errorf("connecting to bus: %w", err)
 	}
 	defer conn.Close()
 
-	desc, err := conn.Peer(peer).Object(dbus.ObjectPath(path)).Introspect(env.Context())
+	desc, err := conn.Peer(peer).Object(dbus.ObjectPath(objectPath)).Introspect(env.Context())
 	if err != nil {
 		return fmt.Errorf("Pinging %s: %w", peer, err)
 	}
-	slices.SortFunc(desc.Interfaces, func(a, b *dbus.InterfaceDescription) int {
-		return cmp.Compare(a.Name, b.Name)
-	})
-	for _, iface := range desc.Interfaces {
-		fmt.Println(iface)
+	ks := slices.Sorted(maps.Keys(desc.Interfaces))
+	for _, k := range ks {
+		fmt.Println(desc.Interfaces[k])
+	}
+	slices.Sort(desc.Children)
+	for _, child := range desc.Children {
+		fmt.Printf("child %s\n", path.Join(objectPath, child))
 	}
 
 	return nil
@@ -273,5 +374,66 @@ func runServePeer(env *command.Env) error {
 
 	<-env.Context().Done()
 	fmt.Println("shutdown")
+	return nil
+}
+
+var generateArgs struct {
+	PackageName string `flag:"package,default=client,Package name to output"`
+	OutFile     string `flag:"out,default=gen.go,Output file path"`
+}
+
+func runGenerate(env *command.Env, interfaceName string) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	peers, err := conn.Peers(env.Context())
+	if err != nil {
+		return fmt.Errorf("listing peers: %w", err)
+	}
+	var desc *dbus.InterfaceDescription
+findIface:
+	for _, peer := range peers {
+		paths := []dbus.ObjectPath{"/"}
+		for len(paths) > 0 {
+			obj := peer.Object(paths[len(paths)-1])
+			paths = paths[:len(paths)-1]
+			d, err := obj.Introspect(env.Context())
+			if err != nil {
+				return fmt.Errorf("introspecting %s: %w", obj, err)
+			}
+			desc = d.Interfaces[interfaceName]
+			if desc != nil {
+				fmt.Printf("Found interface %s on %s\n", interfaceName, obj)
+				break findIface
+			}
+			for _, child := range d.Children {
+				paths = append(paths, obj.Path().Child(child))
+			}
+		}
+	}
+	if desc == nil {
+		return fmt.Errorf("couldn't find any objects on the bus implementing %s", interfaceName)
+	}
+
+	f, err := os.Create(generateArgs.OutFile)
+	if err != nil {
+		return fmt.Errorf("creating output %s: %w", generateArgs.OutFile, err)
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "package %s\n\nimport \"github.com/danderson/dbus\"\n\n", generateArgs.PackageName)
+	code, err := dbusgen.Interface(desc)
+	if _, err := io.WriteString(f, code); err != nil {
+		return fmt.Errorf("writing generated code: %w", err)
+	}
+	if cloErr := f.Close(); cloErr != nil {
+		return fmt.Errorf("closing generated file: %w", err)
+	}
+	if err != nil {
+		return fmt.Errorf("generate interface %s: %w", interfaceName, err)
+	}
+	fmt.Printf("Wrote generated package to %s\n", generateArgs.OutFile)
 	return nil
 }
