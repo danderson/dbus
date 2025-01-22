@@ -396,13 +396,17 @@ func runGenerate(env *command.Env, interfaceName string) error {
 	var desc *dbus.InterfaceDescription
 findIface:
 	for _, peer := range peers {
+		if strings.HasPrefix(peer.Name(), ":") {
+			continue
+		}
 		paths := []dbus.ObjectPath{"/"}
 		for len(paths) > 0 {
 			obj := peer.Object(paths[len(paths)-1])
 			paths = paths[:len(paths)-1]
 			d, err := obj.Introspect(env.Context())
 			if err != nil {
-				return fmt.Errorf("introspecting %s: %w", obj, err)
+				fmt.Printf("introspecting %s: %v\n", obj, err)
+				continue
 			}
 			desc = d.Interfaces[interfaceName]
 			if desc != nil {
