@@ -311,7 +311,13 @@ type ArgumentDescription struct {
 
 func (a ArgumentDescription) String() string {
 	if a.Name != "" {
-		return fmt.Sprintf("%s %s", a.Name, a.Type)
+		// Older DBus interfaces used arg-name style naming, which
+		// looks weird to people used to C and Go-style languages. The
+		// modern recommendation is to use underscores, and since
+		// argument names aren't load-bearing for correctness, fix
+		// them up here for readability.
+		n := strings.Replace(a.Name, "-", "_", -1)
+		return fmt.Sprintf("%s %s", n, a.Type)
 	}
 	return a.Type.String()
 }
