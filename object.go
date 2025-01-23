@@ -40,6 +40,15 @@ func (o Object) Interface(name string) Interface {
 	}
 }
 
+// Child returns the named object at the given relative path from the
+// current object.
+func (o Object) Child(path string) Object {
+	return Object{
+		p:    o.p,
+		path: o.path.Child(path),
+	}
+}
+
 // Introspect returns the object's description of the interfaces it
 // implements.
 //

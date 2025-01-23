@@ -28,6 +28,14 @@ func (p Peer) String() string {
 	return p.name
 }
 
+// IsUniqueName reports whether the peer name is a [unique bus name]
+// for a client connection.
+//
+// [unique bus name]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-bus-names
+func (p Peer) IsUniqueName() bool {
+	return p.name[0] == ':'
+}
+
 // Object returns a named object on the peer.
 //
 // The returned value is a purely local handle. It does not indicate

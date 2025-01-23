@@ -48,8 +48,10 @@ func (p ObjectPath) Valid() bool {
 	return path.IsAbs(string(p.Clean()))
 }
 
-func (p ObjectPath) Child(pathElement string) ObjectPath {
-	return ObjectPath(path.Join(string(p.Clean()), pathElement))
+// Child returns the object path at the given relative path from the
+// current object.
+func (p ObjectPath) Child(relPath string) ObjectPath {
+	return ObjectPath(path.Join(string(p.Clean()), relPath))
 }
 
 // IsChildOf reports whether p is a child of the given parent.
