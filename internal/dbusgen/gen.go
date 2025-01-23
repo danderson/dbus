@@ -2,9 +2,11 @@ package dbusgen
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"go/format"
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -12,13 +14,12 @@ import (
 )
 
 type generator struct {
-	out       bytes.Buffer
-	ifaceName string
+	out   bytes.Buffer
+	iface *dbus.InterfaceDescription
 }
 
 func Interface(iface *dbus.InterfaceDescription) (string, error) {
-	g := generator{}
-	g.ifaceName = publicIdentifier(iface.Name)
+	g := generator{iface: iface}
 	if err := g.Interface(iface); err != nil {
 		return "", err
 	}
@@ -40,18 +41,40 @@ func (g *generator) f(msg string, args ...any) {
 }
 
 func (g *generator) Interface(iface *dbus.InterfaceDescription) error {
-	g.f("type %s struct { iface dbus.Interface }\n", g.ifaceName)
-	g.f("func New%s(obj dbus.Object) %s { return %s{obj.Interface(%q)} }\n\n", g.ifaceName, g.ifaceName, g.ifaceName, iface.Name)
+	g.f(`
+type %[1]s struct { iface dbus.Interface }
+
+func New%[1]s(obj dbus.Object) %[1]s {
+  return %[1]s{
+    iface: obj.Interface(%[2]q),
+  }
+}
+`, publicIdentifier(g.iface.Name), iface.Name)
+
+	slices.SortFunc(iface.Methods, func(a, b *dbus.MethodDescription) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	slices.SortFunc(iface.Signals, func(a, b *dbus.SignalDescription) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	slices.SortFunc(iface.Properties, func(a, b *dbus.PropertyDescription) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	for _, m := range iface.Methods {
-		if err := g.Method(m); err != nil {
-			return err
-		}
+		g.Method(m)
 	}
+	for _, p := range iface.Properties {
+		g.Property(p)
+	}
+	for _, s := range iface.Signals {
+		g.Signal(s)
+	}
+	g.RegisterSignals(iface)
 	return nil
 }
 
-func (g *generator) Method(m *dbus.MethodDescription) error {
+func (g *generator) Method(m *dbus.MethodDescription) {
 	mname := publicIdentifier(m.Name)
 	ai := argsIn{mname, m.In}
 	ao := argsOut{mname, m.Out}
@@ -59,7 +82,7 @@ func (g *generator) Method(m *dbus.MethodDescription) error {
 	ai.writeStruct(g)
 	ao.writeStruct(g)
 
-	g.f("func (iface %s) %s(", g.ifaceName, mname)
+	g.f("func (iface %s) %s(", publicIdentifier(g.iface.Name), mname)
 	ai.writeArgs(g)
 	g.s(") (")
 	ao.writeArgs(g)
@@ -69,7 +92,48 @@ func (g *generator) Method(m *dbus.MethodDescription) error {
 	g.f("err := iface.iface.Call(ctx, %q, %s, %s)\n", m.Name, reqVar, respVar)
 	ao.writeRet(g)
 	g.s("}\n\n")
-	return nil
+}
+
+func (g *generator) Signal(s *dbus.SignalDescription) {
+	sname := publicIdentifier(s.Name)
+	g.f(`
+// %[1]s implements the signal %[2]s.%[3]s.
+type %[1]s %[4]s
+
+`, sname, g.iface.Name, s.Name, asStruct(s.Args).Type())
+}
+
+func (g *generator) RegisterSignals(iface *dbus.InterfaceDescription) {
+	if len(iface.Signals) == 0 {
+		return
+	}
+	g.s("func init() {\n")
+	for _, s := range iface.Signals {
+		g.f("dbus.RegisterSignalType(%q, %q, %s{})\n", iface.Name, s.Name, publicIdentifier(s.Name))
+	}
+	g.s("}\n\n")
+}
+
+func (g *generator) Property(prop *dbus.PropertyDescription) {
+	if prop.Constant || prop.Readable {
+		g.f(`
+func (iface %[1]s) %[2]s(ctx context.Context) (%[3]s, error) {
+  var ret %[3]s
+  err := iface.iface.GetProperty(ctx, %[4]q, &ret)
+  return ret, err
+}
+
+`, publicIdentifier(g.iface.Name), publicIdentifier(prop.Name), prop.Type.Type(), prop.Name)
+	}
+
+	if prop.Writable {
+		g.f(`
+func (iface %[1]s) Set%[2]s(ctx context.Context, val %[3]s) error {
+  return iface.iface.SetProperty(ctx, %[4]q, val)
+}
+
+`, publicIdentifier(g.iface.Name), publicIdentifier(prop.Name), prop.Type.Type(), prop.Name)
+	}
 }
 
 func argName(n int, arg dbus.ArgumentDescription) string {
