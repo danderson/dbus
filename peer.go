@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"bytes"
 	"context"
 )
 
@@ -96,6 +97,9 @@ func (p Peer) Identity(ctx context.Context, opts ...CallOption) (PeerIdentity, e
 	if err := p.Conn().bus.Call(ctx, "GetConnectionCredentials", p.name, &resp, opts...); err != nil {
 		return PeerIdentity{}, err
 	}
+	// The SELinux security context is reported with a trailing null
+	// byte. Remove it, it's just a weird historical artifact.
+	resp.SecurityLabel, _ = bytes.CutSuffix(resp.SecurityLabel, []byte("\x00"))
 	return resp, nil
 }
 
