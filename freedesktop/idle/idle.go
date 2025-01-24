@@ -57,9 +57,12 @@ func (iface Idle) LockedTime(ctx context.Context) (time.Duration, error) {
 // A session may be idle with or without being locked. Idleness has no
 // precise definition, but usually translates to a lack of
 // keyboard/mouse inputs.
-func (iface Idle) IdleTime(ctx context.Context) (seconds uint32, err error) {
-	err = iface.iface.Call(ctx, "GetSessionIdleTime", nil, &seconds)
-	return seconds, err
+func (iface Idle) IdleTime(ctx context.Context) (time.Duration, error) {
+	var seconds uint32
+	if err := iface.iface.Call(ctx, "GetSessionIdleTime", nil, &seconds); err != nil {
+		return 0, err
+	}
+	return time.Duration(seconds) * time.Second, nil
 }
 
 // Inhibit prevents the session from locking due to being idle.
@@ -93,7 +96,7 @@ func (iface Idle) Lock(ctx context.Context) error {
 // ScreenSaverStateChanged implements the
 // org.freedesktop.ScreenSaver.ActiveChanged signal.
 type SessionStateChanged struct {
-	Active bool
+	Locked bool
 }
 
 func init() {
