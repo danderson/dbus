@@ -110,12 +110,36 @@ func contextPutFile(ctx context.Context, file *os.File) (idx uint32, err error) 
 
 type allowInteractionContextKey struct{}
 
-func WithContextUserInteraction(ctx context.Context, allow bool) context.Context {
-	return context.WithValue(ctx, allowInteractionContextKey{}, allow)
+// WithContextUserInteraction returns a copy of the parent context
+// with the DBus user interation policy set according to allow.
+//
+// Allowing user interaction prompts the user for permission to
+// proceed when a call is made to a privileged method, instead of
+// returning an access denied error immediately.
+//
+// Interaction is disabled by default because it can cause calls to
+// block for an extended period of time, until the user responds to
+// the authorization prompt, or indefinitely on servers where users
+// aren't expected to be available for interactive prompting.
+func WithContextUserInteraction(parent context.Context, allow bool) context.Context {
+	return context.WithValue(parent, allowInteractionContextKey{}, allow)
 }
 
 type blockAutostartContextKey struct{}
 
+// WithContextAutostart returns a copy of the parent context with the
+// DBus auto-start policy set according to allow.
+//
+// Services that provide DBus APIs can elect to be "bus
+// activated". Bus activated peers are present on the bus even when
+// their underlying service isn't running, and the bus arranges to
+// start them seamlessly when a method call is directed to them.
+//
+// By default, method calls trigger bus activation as needed and
+// clients don't need to be aware of this feature. If auto-starting
+// services is undesirable, WithContextAutostart can be used to make
+// calls fail with a [CallError] if making the call would require bus
+// activation of a service.
 func WithContextAutostart(ctx context.Context, allow bool) context.Context {
 	return context.WithValue(ctx, blockAutostartContextKey{}, !allow)
 }
