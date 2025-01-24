@@ -179,7 +179,7 @@ func (w *Watcher) deliverSignal(sender Interface, hdr *header, body reflect.Valu
 	})
 }
 
-func (w *Watcher) deliverProp(sender Interface, hdr *header, prop interfaceMethod, value reflect.Value) {
+func (w *Watcher) deliverProp(sender Interface, hdr *header, prop interfaceMember, value reflect.Value) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -204,7 +204,7 @@ func (w *Watcher) deliverProp(sender Interface, hdr *header, prop interfaceMetho
 
 	w.enqueueLocked(Notification{
 		Sender: sender,
-		Name:   prop.Method,
+		Name:   prop.Member,
 		Body:   value.Interface(),
 	})
 }

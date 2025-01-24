@@ -49,7 +49,7 @@ func MatchSignal[SignalT any]() *Match {
 
 	sm := signalMatch{
 		iface:        k.Interface,
-		member:       k.Method,
+		member:       k.Member,
 		stringFields: map[int]func(reflect.Value) string{},
 		objectFields: map[int]func(reflect.Value) ObjectPath{},
 	}
@@ -86,7 +86,7 @@ func MatchProperty[PropT any]() *Match {
 
 	pm := propertyMatch{
 		iface: k.Interface,
-		prop:  k.Method,
+		prop:  k.Member,
 	}
 
 	return &Match{
@@ -236,7 +236,7 @@ func (m *Match) matchesSignal(hdr *header, body reflect.Value) bool {
 
 // matchesSignal reports whether the given property change matches the
 // filter.
-func (m *Match) matchesProperty(hdr *header, prop interfaceMethod, body reflect.Value) bool {
+func (m *Match) matchesProperty(hdr *header, prop interfaceMember, body reflect.Value) bool {
 	pm, ok := m.property.GetOK()
 	if !ok {
 		return false
@@ -254,7 +254,7 @@ func (m *Match) matchesProperty(hdr *header, prop interfaceMethod, body reflect.
 	if hdr.Interface != "org.freedesktop.DBus.Properties" || hdr.Member != "PropertiesChanged" {
 		return false
 	}
-	if pm.iface != prop.Interface || pm.prop != prop.Method {
+	if pm.iface != prop.Interface || pm.prop != prop.Member {
 		return false
 	}
 

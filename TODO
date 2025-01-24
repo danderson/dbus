@@ -11,6 +11,3 @@ maybe allow unmarshaling a property into a *any, so people can get
 properties of unknown type and then reflect on the output.
 
 Export fragment mapper funcs for people doing custom encoding stuff.
-
-Rename interfaceMethod to interfaceMember, use throughout to refer to
-interface+{method,signal,property}.

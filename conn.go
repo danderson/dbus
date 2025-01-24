@@ -54,7 +54,7 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 			Mapper: encoderFor,
 		},
 		calls:    map[uint32]*pendingCall{},
-		handlers: map[interfaceMethod]handlerFunc{},
+		handlers: map[interfaceMember]handlerFunc{},
 	}
 	ret.bus = ret.
 		Peer("org.freedesktop.DBus").
@@ -107,12 +107,16 @@ type Conn struct {
 	lastSerial uint32
 	watchers   mapset.Set[*Watcher]
 	claims     mapset.Set[*Claim]
-	handlers   map[interfaceMethod]handlerFunc
+	handlers   map[interfaceMember]handlerFunc
 }
 
-type interfaceMethod struct {
+type interfaceMember struct {
 	Interface string
-	Method    string
+	Member    string
+}
+
+func (im interfaceMember) String() string {
+	return im.Interface + "." + im.Member
 }
 
 type pendingCall struct {
@@ -305,7 +309,7 @@ func (c *Conn) dispatchCall(ctx context.Context, msg *msg) {
 		if c.closed {
 			return nil, 0
 		}
-		handler := c.handlers[interfaceMethod{msg.Interface, msg.Member}]
+		handler := c.handlers[interfaceMember{msg.Interface, msg.Member}]
 		c.lastSerial++
 		return handler, c.lastSerial
 	}()
@@ -459,7 +463,7 @@ func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
 			}
 			if t != nil {
 				for w := range c.lockedWatchers() {
-					w.deliverProp(emitter, &msg.header, interfaceMethod{iface, propName}, v)
+					w.deliverProp(emitter, &msg.header, interfaceMember{iface, propName}, v)
 				}
 			}
 			return nil
@@ -482,7 +486,7 @@ func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
 			continue
 		}
 		for w := range c.lockedWatchers() {
-			w.deliverProp(emitter, &msg.header, interfaceMethod{iface, prop}, reflect.New(t))
+			w.deliverProp(emitter, &msg.header, interfaceMember{iface, prop}, reflect.New(t))
 		}
 	}
 	return nil
@@ -612,7 +616,7 @@ func (c *Conn) EmitSignal(ctx context.Context, obj ObjectPath, signal any) error
 		Serial:    serial,
 		Path:      obj,
 		Interface: k.Interface,
-		Member:    k.Method,
+		Member:    k.Member,
 	}
 	return c.writeMsg(ctx, &hdr, signal)
 }
@@ -633,7 +637,7 @@ func (c *Conn) Handle(interfaceName, methodName string, fn any) {
 	handler := handlerForFunc(fn)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.handlers[interfaceMethod{interfaceName, methodName}] = handler
+	c.handlers[interfaceMember{interfaceName, methodName}] = handler
 }
 
 type handlerFunc func(ctx context.Context, object ObjectPath, req *fragments.Decoder) (any, error)
