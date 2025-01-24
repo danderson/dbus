@@ -44,7 +44,8 @@ func (g *generator) Interface(iface *dbus.InterfaceDescription) error {
 	g.f(`
 type %[1]s struct { iface dbus.Interface }
 
-func New%[1]s(obj dbus.Object) %[1]s {
+// Interface returns a %[1]s on the given object.
+func Interface(obj dbus.Object) %[1]s {
   return %[1]s{
     iface: obj.Interface(%[2]q),
   }
@@ -89,7 +90,7 @@ func (g *generator) Method(m *dbus.MethodDescription) {
 	g.s(") {\n")
 	reqVar := ai.writeMkReq(g)
 	respVar := ao.writeMkRet(g)
-	g.f("err := iface.iface.Call(ctx, %q, %s, %s)\n", m.Name, reqVar, respVar)
+	g.f("err = iface.iface.Call(ctx, %q, %s, %s)\n", m.Name, reqVar, respVar)
 	ao.writeRet(g)
 	g.s("}\n\n")
 }
@@ -119,7 +120,7 @@ func (g *generator) Property(prop *dbus.PropertyDescription) {
 		g.f(`
 func (iface %[1]s) %[2]s(ctx context.Context) (%[3]s, error) {
   var ret %[3]s
-  err := iface.iface.GetProperty(ctx, %[4]q, &ret)
+  err = iface.iface.GetProperty(ctx, %[4]q, &ret)
   return ret, err
 }
 

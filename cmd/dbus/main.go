@@ -516,7 +516,11 @@ func runGenerate(env *command.Env) error {
 	fmt.Fprintf(f, `
 package %s
 
-import "github.com/danderson/dbus"
+import (
+  "context"
+
+  "github.com/danderson/dbus"
+)
 `, generateArgs.PackageName)
 	code, err := dbusgen.Interface(desc)
 	if _, err := io.WriteString(f, code); err != nil {
