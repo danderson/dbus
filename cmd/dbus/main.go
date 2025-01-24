@@ -164,16 +164,49 @@ func runListPeers(env *command.Env) error {
 	}
 	defer conn.Close()
 
-	names, err := conn.Peers(env.Context())
+	ctx, cancel := context.WithTimeout(env.Context(), time.Minute)
+	defer cancel()
+	peers, err := conn.Peers(ctx)
 	if err != nil {
 		return fmt.Errorf("listing bus names: %w", err)
 	}
+	aliases := map[dbus.Peer][]dbus.Peer{}
 
-	slices.SortFunc(names, func(a, b dbus.Peer) int {
-		return cmp.Compare(a.Name(), b.Name())
-	})
-	for _, n := range names {
-		fmt.Println(n)
+	for _, p := range peers {
+		if p.IsUniqueName() {
+			continue
+		}
+		owner, err := p.Owner(ctx)
+		if err != nil {
+			fmt.Printf("Getting owner of %s: %v\n", p, err)
+			continue
+		}
+		aliases[owner] = append(aliases[owner], p)
+		aliases[p] = []dbus.Peer{owner}
+	}
+	for _, alias := range aliases {
+		slices.SortFunc(alias, func(a, b dbus.Peer) int {
+			return cmp.Compare(a.Name(), b.Name())
+		})
+	}
+
+	for _, p := range peers {
+		alias := aliases[p]
+		if len(alias) == 0 {
+			fmt.Println(p)
+		} else {
+			var out strings.Builder
+			out.WriteString(p.Name())
+			out.WriteString(" (")
+			for i, a := range alias {
+				if i > 0 {
+					out.WriteString(", ")
+				}
+				out.WriteString(a.Name())
+			}
+			out.WriteString(")")
+			fmt.Println(out.String())
+		}
 	}
 
 	return nil
