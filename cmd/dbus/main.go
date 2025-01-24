@@ -98,6 +98,12 @@ With three arguments, list only the exact peer, object and interface
 specified.
 
 In all cases, the full API for every interface is shown.
+
+Unless explicitly asked for, the listing omits the three well-known
+interfaces that most objects implement:
+  org.freedesktop.DBus.Peer
+  org.freedesktop.DBus.Properties
+  org.freedesktop.DBus.Introspectable
 `,
 						Run: runListInterfaces,
 					},
