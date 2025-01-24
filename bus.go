@@ -3,6 +3,7 @@ package dbus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 
 	"github.com/creachadair/mds/mapset"
@@ -26,12 +27,12 @@ func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
 		pumpStopped: make(chan struct{}),
 		last:        false,
 	}
-	_, err := ret.w.Match(NewMatch().Signal(NameAcquired{}).ArgStr(0, name))
+	_, err := ret.w.Match(MatchSignal[NameAcquired]().ArgStr(0, name))
 	if err != nil {
 		ret.w.Close()
 		return nil, err
 	}
-	_, err = ret.w.Match(NewMatch().Signal(NameLost{}).ArgStr(0, name))
+	_, err = ret.w.Match(MatchSignal[NameLost]().ArgStr(0, name))
 	if err != nil {
 		ret.w.Close()
 		return nil, err
@@ -185,7 +186,7 @@ func (c *Claim) pump() {
 			}
 			c.last = false
 		default:
-			panic("unexpected signal")
+			panic(fmt.Errorf("unexpected signal: %#v", sig))
 		}
 		c.send(c.last)
 	}

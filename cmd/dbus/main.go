@@ -369,7 +369,7 @@ func runListen(env *command.Env) error {
 	defer conn.Close()
 
 	w := conn.Watch()
-	w.Match(dbus.NewMatch())
+	w.Match(dbus.MatchAllSignals())
 	fmt.Println("Listening for signals...")
 	for {
 		select {

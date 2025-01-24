@@ -17,6 +17,7 @@ type Match struct {
 	object       value.Maybe[ObjectPath]
 	objectPrefix value.Maybe[ObjectPath]
 	signal       value.Maybe[signalMatch]
+	property     value.Maybe[propertyMatch]
 	argStr       map[int]string
 	argPath      map[int]ObjectPath
 	arg0NS       value.Maybe[string]
@@ -29,8 +30,72 @@ type signalMatch struct {
 	member       string
 }
 
-// NewMatch returns a new Match that matches all signals.
-func NewMatch() *Match {
+type propertyMatch struct {
+	iface string
+	prop  string
+}
+
+// Signal creates a Match for the given signal type.
+//
+// The provided signal type must be registered with
+// [RegisterSignalType] prior to calling MatchSignal.
+func MatchSignal[SignalT any]() *Match {
+	t := reflect.TypeFor[SignalT]()
+	bt, _ := derefType(t)
+	k, ok := signalNameFor(bt)
+	if !ok {
+		panic(fmt.Errorf("unknown signal type %s", bt))
+	}
+
+	sm := signalMatch{
+		iface:        k.Interface,
+		member:       k.Method,
+		stringFields: map[int]func(reflect.Value) string{},
+		objectFields: map[int]func(reflect.Value) ObjectPath{},
+	}
+
+	inf, err := getStructInfo(bt)
+	if err != nil {
+		panic(fmt.Errorf("getting signal struct info for %s: %w", bt, err))
+	}
+	for i, field := range inf.StructFields {
+		fieldBottom, derefField := derefType(field.Type)
+		if fieldBottom == reflect.TypeFor[ObjectPath]() {
+			sm.objectFields[i] = getter[ObjectPath](field, derefField)
+		} else if fieldBottom.Kind() == reflect.String {
+			sm.stringFields[i] = getter[string](field, derefField)
+		}
+	}
+
+	return &Match{
+		signal: value.Just(sm),
+	}
+}
+
+// MatchProperty creates a Match for the given property type.
+//
+// The provided property type must be registered with
+// [RegisterPropertyChangeType] prior to calling MatchProperty.
+func MatchProperty[PropT any]() *Match {
+	t := reflect.TypeFor[PropT]()
+	bt, _ := derefType(t)
+	k, ok := propNameFor(bt)
+	if !ok {
+		panic(fmt.Errorf("unknown property type %s", t))
+	}
+
+	pm := propertyMatch{
+		iface: k.Interface,
+		prop:  k.Method,
+	}
+
+	return &Match{
+		property: value.Just(pm),
+	}
+}
+
+// NewMatch creates a Match for all signals.
+func MatchAllSignals() *Match {
 	return &Match{}
 }
 
@@ -80,21 +145,29 @@ func (m *Match) filterString() string {
 		ms = append(ms, "path_namespace="+p.String())
 		//kv("path_namespace", p.String())
 	}
+	if pm, ok := m.property.GetOK(); ok {
+		kv("interface", "org.freedesktop.DBus.Properties")
+		kv("member", "PropertiesChanged")
+		kv("arg0", pm.iface)
+	}
+
 	if sm, ok := m.signal.GetOK(); ok {
 		kv("interface", sm.iface)
 		kv("member", sm.member)
+
+		for _, i := range slices.Sorted(maps.Keys(m.argStr)) {
+			k := fmt.Sprintf("arg%d", i)
+			kv(k, m.argStr[i])
+		}
+		for _, i := range slices.Sorted(maps.Keys(m.argPath)) {
+			k := fmt.Sprintf("arg%dpath", i)
+			kv(k, m.argPath[i].String())
+		}
+		if n, ok := m.arg0NS.GetOK(); ok {
+			kv("arg0namespace", n)
+		}
 	}
-	for _, i := range slices.Sorted(maps.Keys(m.argStr)) {
-		k := fmt.Sprintf("arg%d", i)
-		kv(k, m.argStr[i])
-	}
-	for _, i := range slices.Sorted(maps.Keys(m.argPath)) {
-		k := fmt.Sprintf("arg%dpath", i)
-		kv(k, m.argPath[i].String())
-	}
-	if n, ok := m.arg0NS.GetOK(); ok {
-		kv("arg0namespace", n)
-	}
+
 	return strings.Join(ms, ",")
 }
 
@@ -106,15 +179,19 @@ func (m *Match) clone() *Match {
 	return &ret
 }
 
-// matches reports whether the given signal header and body matches
-// the filter, using the same match logic that the bus uses on the
-// match's filterString().
+// matchesSignal reports whether the given signal header and body
+// matches the filter, using the same match logic that the bus uses on
+// the match's filterString().
 //
 // This is necessary because a DBus connection receives a single
 // stream of signals. When multiple Watchers are active, the received
 // signals are the union of all the Watchers' filters, and so each one
 // needs to do additional filtering on received signals.
-func (m *Match) matches(hdr *header, body reflect.Value) bool {
+func (m *Match) matchesSignal(hdr *header, body reflect.Value) bool {
+	if m.property.Present() {
+		return false
+	}
+
 	if s, ok := m.sender.GetOK(); ok && hdr.Sender != s {
 		return false
 	}
@@ -124,71 +201,64 @@ func (m *Match) matches(hdr *header, body reflect.Value) bool {
 	if p, ok := m.objectPrefix.GetOK(); ok && hdr.Path != p && !hdr.Path.IsChildOf(p) {
 		return false
 	}
-	sm, ok := m.signal.GetOK()
-	if ok && (hdr.Interface != sm.iface || hdr.Member != sm.member) {
-		return false
-	}
 
-	for i, want := range m.argStr {
-		if got := sm.stringFields[i](body.Elem()); got != want {
+	if sm, ok := m.signal.GetOK(); ok {
+		if hdr.Interface != sm.iface || hdr.Member != sm.member {
 			return false
 		}
-	}
-	for i, want := range m.argPath {
-		if f := sm.stringFields[i]; f != nil {
-			if got := f(body.Elem()); got != want.String() && !ObjectPath(got).IsChildOf(want) {
+
+		for i, want := range m.argStr {
+			if got := sm.stringFields[i](body.Elem()); got != want {
 				return false
 			}
 		}
-		if f := sm.objectFields[i]; f != nil {
-			if got := f(body.Elem()); got != want && !got.IsChildOf(want) {
-				return false
+		for i, want := range m.argPath {
+			if f := sm.stringFields[i]; f != nil {
+				if got := f(body.Elem()); got != want.String() && !ObjectPath(got).IsChildOf(want) {
+					return false
+				}
+			}
+			if f := sm.objectFields[i]; f != nil {
+				if got := f(body.Elem()); got != want && !got.IsChildOf(want) {
+					return false
+				}
 			}
 		}
-	}
-	if n, ok := m.arg0NS.GetOK(); ok {
-		if got := sm.stringFields[0](body.Elem()); got != n && !strings.HasPrefix(got, n+".") {
-			return false
+		if n, ok := m.arg0NS.GetOK(); ok {
+			if got := sm.stringFields[0](body.Elem()); got != n && !strings.HasPrefix(got, n+".") {
+				return false
+			}
 		}
 	}
 
 	return true
 }
 
-// Signal restricts the Match to the given signal.
-//
-// The provided signal must be a signal body struct that has been
-// registered with [RegisterSignalType].
-func (m *Match) Signal(signal any) *Match {
-	t := reflect.TypeOf(signal)
-	bt, _ := derefType(t)
-	k, ok := signalNameFor(bt)
+// matchesSignal reports whether the given property change matches the
+// filter.
+func (m *Match) matchesProperty(hdr *header, prop interfaceMethod, body reflect.Value) bool {
+	pm, ok := m.property.GetOK()
 	if !ok {
-		panic(fmt.Errorf("unknown signal type %s", bt))
+		return false
 	}
 
-	sm := signalMatch{
-		iface:        k.Interface,
-		member:       k.Method,
-		stringFields: map[int]func(reflect.Value) string{},
-		objectFields: map[int]func(reflect.Value) ObjectPath{},
+	if s, ok := m.sender.GetOK(); ok && hdr.Sender != s {
+		return false
+	}
+	if o, ok := m.object.GetOK(); ok && hdr.Path != o {
+		return false
+	}
+	if p, ok := m.objectPrefix.GetOK(); ok && hdr.Path != p && !hdr.Path.IsChildOf(p) {
+		return false
+	}
+	if hdr.Interface != "org.freedesktop.DBus.Properties" || hdr.Member != "PropertiesChanged" {
+		return false
+	}
+	if pm.iface != prop.Interface || pm.prop != prop.Method {
+		return false
 	}
 
-	inf, err := getStructInfo(bt)
-	if err != nil {
-		panic(fmt.Errorf("getting signal struct info for %s: %w", bt, err))
-	}
-	for i, field := range inf.StructFields {
-		fieldBottom, derefField := derefType(field.Type)
-		if fieldBottom == reflect.TypeFor[ObjectPath]() {
-			sm.objectFields[i] = getter[ObjectPath](field, derefField)
-		} else if fieldBottom.Kind() == reflect.String {
-			sm.stringFields[i] = getter[string](field, derefField)
-		}
-	}
-
-	m.signal = value.Just(sm)
-	return m
+	return true
 }
 
 func getter[T any](f *structField, derefField bool) func(reflect.Value) T {
@@ -260,8 +330,7 @@ func (m *Match) ObjectPrefix(o ObjectPath) *Match {
 // ArgStr restricts the Match to signals whose i-th body field is a
 // string equal to val.
 //
-// To use ArgStr, the Match must also be restricted to a single signal
-// type with [Match.Signal].
+// ArgStr can only be used on matches created with [MatchSignal].
 func (m *Match) ArgStr(i int, val string) *Match {
 	if m.argStr == nil {
 		m.argStr = map[int]string{}
@@ -273,8 +342,8 @@ func (m *Match) ArgStr(i int, val string) *Match {
 // ArgPathPrefix restricts the Match to signals whose i-th body field
 // is an object path with the given prefix.
 //
-// To use ArgPathPrefix, the Match must also be restricted to a single
-// signal type with [Match.Signal].
+// ArgPathPrefix can only be used on matches created with
+// [MatchSignal].
 func (m *Match) ArgPathPrefix(i int, val ObjectPath) *Match {
 	if m.argPath == nil {
 		m.argPath = map[int]ObjectPath{}
@@ -286,8 +355,8 @@ func (m *Match) ArgPathPrefix(i int, val ObjectPath) *Match {
 // Arg0Namespace restricts the Match to signals whose first body field
 // is a peer or interface name with the given dot-separated prefix.
 //
-// To use Arg0Namespace, the Match must also be restricted to a single
-// signal type with [Match.Signal].
+// Arg0Namespace can only be used on matches created with
+// [MatchSignal].
 func (m *Match) Arg0Namespace(val string) *Match {
 	m.arg0NS = value.Just(val)
 	return m

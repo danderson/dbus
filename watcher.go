@@ -20,7 +20,7 @@ const maxWatcherQueue = 20
 func (c *Conn) Watch() *Watcher {
 	w := &Watcher{
 		conn:        c,
-		signals:     make(chan *Signal),
+		signals:     make(chan *Notification),
 		wakePump:    make(chan struct{}, 1),
 		stopPump:    make(chan struct{}),
 		pumpStopped: make(chan struct{}),
@@ -38,31 +38,39 @@ func (c *Conn) Watch() *Watcher {
 // filters.
 type Watcher struct {
 	conn     *Conn
-	signals  chan *Signal
+	signals  chan *Notification
 	wakePump chan struct{}
 
 	stopPump    chan struct{}
 	pumpStopped chan struct{}
 
 	mu      sync.Mutex
-	queue   queue.Queue[*Signal]
+	queue   queue.Queue[*Notification]
 	matches mapset.Set[*Match]
 }
 
-// Signal is a signal received from a bus peer.
-type Signal struct {
-	// Sender is the originator of the signal.
+// Notification is a signal or property change received from a bus
+// peer.
+type Notification struct {
+	// Sender is the originator of the notification.
 	Sender Interface
-	// Name is the name of the signal.
+	// Name is the name of the signal or changed property.
 	Name string
-	// Body is the signal payload. It is a pointer to the struct type
-	// that was associated with the signal name using
-	// RegisterSignalType(), or a pointer to an anonymous struct for
-	// signals with no registered payload type.
+	// Body is the signal payload or property value.
+	//
+	// For signals, Body a pointer to the struct type that was
+	// associated with the signal name using RegisterSignalType, or
+	// a pointer to an anonymous struct if no type was registered for
+	// the signal.
+	//
+	// For property changes, Body is a pointer to the struct type that
+	// was associated with the property using
+	// RegisterPropertyChangeType, or a pointer to an anonymous struct
+	// if no type was registered for the property.
 	Body any
-	// Overflow reports that the watcher discarded some signals that
-	// followed this one, due to the caller not processing delivered
-	// signals fast enough.
+	// Overflow reports that the watcher discarded some notifications
+	// that followed this one, due to the caller not processing
+	// delivered notifications fast enough.
 	Overflow bool
 }
 
@@ -89,11 +97,11 @@ func (w *Watcher) Close() {
 // Chan returns the channel on which signals are delivered.
 //
 // The caller must drain this channel of new signals promptly, to
-// avoid overflowing the Watcher's receive queue and losing Signals of
+// avoid overflowing the Watcher's receive queue and losing Notifications of
 // interest. Missing signals due to an overflow are indicated by the
-// Overflow field of the [Signal] that immediately precedes the
+// Overflow field of the [Notification] that immediately precedes the
 // discarded signal(s).
-func (w *Watcher) Chan() <-chan *Signal {
+func (w *Watcher) Chan() <-chan *Notification {
 	return w.signals
 }
 
@@ -125,7 +133,23 @@ func (w *Watcher) Match(m *Match) (remove func(), err error) {
 	}, nil
 }
 
-func (w *Watcher) deliver(sender Interface, hdr *header, body reflect.Value) {
+func (w *Watcher) enqueueLocked(n Notification) {
+	if w.queue.Len() >= maxWatcherQueue {
+		last, _ := w.queue.Peek(-1)
+		last.Overflow = true
+		return
+	}
+
+	w.queue.Add(&n)
+	if w.queue.Len() == 1 {
+		select {
+		case w.wakePump <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (w *Watcher) deliverSignal(sender Interface, hdr *header, body reflect.Value) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -138,7 +162,7 @@ func (w *Watcher) deliver(sender Interface, hdr *header, body reflect.Value) {
 
 	want := func() bool {
 		for m := range maps.Keys(w.matches) {
-			if m.matches(hdr, body) {
+			if m.matchesSignal(hdr, body) {
 				return true
 			}
 		}
@@ -148,30 +172,48 @@ func (w *Watcher) deliver(sender Interface, hdr *header, body reflect.Value) {
 		return
 	}
 
-	if w.queue.Len() >= maxWatcherQueue {
-		last, _ := w.queue.Peek(-1)
-		last.Overflow = true
-		return
-	}
-
-	w.queue.Add(&Signal{
+	w.enqueueLocked(Notification{
 		Sender: sender,
 		Name:   hdr.Member,
 		Body:   body.Interface(),
 	})
-	if w.queue.Len() == 1 {
-		select {
-		case w.wakePump <- struct{}{}:
-		default:
-		}
+}
+
+func (w *Watcher) deliverProp(sender Interface, hdr *header, prop interfaceMethod, value reflect.Value) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	select {
+	case <-w.pumpStopped:
+		// raced with a Close, this watcher is done.
+		return
+	default:
 	}
+
+	want := func() bool {
+		for m := range maps.Keys(w.matches) {
+			if m.matchesProperty(hdr, prop, value) {
+				return true
+			}
+		}
+		return false
+	}()
+	if !want {
+		return
+	}
+
+	w.enqueueLocked(Notification{
+		Sender: sender,
+		Name:   prop.Method,
+		Body:   value.Interface(),
+	})
 }
 
 func (w *Watcher) pump() {
 	defer close(w.pumpStopped)
 	defer close(w.signals)
 	for {
-		sig := func() *Signal {
+		sig := func() *Notification {
 			w.mu.Lock()
 			defer w.mu.Unlock()
 			ret, _ := w.queue.Pop()

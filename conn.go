@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"log"
 	"maps"
 	"net"
@@ -121,6 +122,18 @@ type pendingCall struct {
 	err    error
 }
 
+func (c *Conn) lockedWatchers() iter.Seq[*Watcher] {
+	return func(yield func(*Watcher) bool) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		for w := range c.watchers {
+			if !yield(w) {
+				return
+			}
+		}
+	}
+}
+
 // Close closes the DBus connection.
 func (c *Conn) Close() error {
 	var (
@@ -220,33 +233,42 @@ func (c *Conn) readLoop() {
 
 type msg struct {
 	header
-	body  fragments.Decoder
+	order fragments.ByteOrder
+	body  []byte
 	files []*os.File
+}
+
+func (m msg) Decoder() *fragments.Decoder {
+	return &fragments.Decoder{
+		Order:  m.order,
+		Mapper: decoderFor,
+		In:     bytes.NewBuffer(m.body),
+	}
 }
 
 // readMsg reads one complete DBus message from c.t. Must not be
 // called concurrently (Conn.dispatchMsg ensures this).
 func (c *Conn) readMsg() (*msg, error) {
-	ret := &msg{
-		body: fragments.Decoder{
-			Order:  fragments.NativeEndian,
-			Mapper: decoderFor,
-			In:     c.t,
-		},
+	dec := fragments.Decoder{
+		Order:  fragments.NativeEndian,
+		Mapper: decoderFor,
+		In:     c.t,
 	}
-	if err := ret.body.Value(context.Background(), &ret.header); err != nil {
-		return nil, err
-	}
-	body, err := io.ReadAll(io.LimitReader(c.t, int64(ret.header.Length)))
+	var ret msg
+	err := dec.Value(context.Background(), &ret.header)
 	if err != nil {
 		return nil, err
 	}
-	ret.body.In = bytes.NewBuffer(body)
+	ret.body, err = io.ReadAll(io.LimitReader(c.t, int64(ret.header.Length)))
+	if err != nil {
+		return nil, err
+	}
+	ret.order = dec.Order
 	ret.files, err = c.t.GetFiles(int(ret.header.NumFDs))
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	return &ret, nil
 }
 
 func (c *Conn) dispatchMsg() error {
@@ -302,7 +324,7 @@ func (c *Conn) dispatchCall(ctx context.Context, msg *msg) {
 		return
 	}
 
-	resp, err := handler(ctx, msg.Path, &msg.body)
+	resp, err := handler(ctx, msg.Path, msg.Decoder())
 	if err != nil {
 		respHdr.Type = msgTypeError
 		respHdr.ErrName = "org.freedesktop.DBus.Error.Failed"
@@ -327,7 +349,7 @@ func (c *Conn) dispatchReturn(ctx context.Context, msg *msg) error {
 	}
 
 	if pending.resp != nil {
-		if err := msg.body.Value(ctx, pending.resp); err != nil {
+		if err := msg.Decoder().Value(ctx, pending.resp); err != nil {
 			return err
 		}
 	}
@@ -356,7 +378,7 @@ func (c *Conn) dispatchErr(msg *msg) error {
 		if s := msg.Signature.String(); s != "s" && !strings.HasPrefix(s, "(s") {
 			return ""
 		}
-		errStr, err := msg.body.String()
+		errStr, err := msg.Decoder().String()
 		if err != nil {
 			return fmt.Sprintf("got error while decoding error detail: %v", err)
 		}
@@ -372,6 +394,11 @@ func (c *Conn) dispatchErr(msg *msg) error {
 }
 
 func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
+	var propErr error
+	if msg.Interface == "org.freedesktop.DBus.Properties" && msg.Member == "PropertiesChanged" {
+		propErr = c.dispatchPropChange(ctx, msg)
+	}
+
 	signalType := signalTypeFor(msg.Interface, msg.Member)
 	if signalType == nil {
 		signalType = msg.Signature.asStruct().Type()
@@ -383,16 +410,81 @@ func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
 	emitter, _ := ContextEmitter(ctx)
 
 	signal := reflect.New(signalType)
-	if err := msg.body.Value(ctx, signal.Interface()); err != nil {
+	if err := msg.Decoder().Value(ctx, signal.Interface()); err != nil {
+		return errors.Join(propErr, err)
+	}
+
+	for w := range c.lockedWatchers() {
+		w.deliverSignal(emitter, &msg.header, signal)
+	}
+
+	return propErr
+}
+
+func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
+	// Make a copy of the body decoder, so that dispatchSignal can
+	// still do the generic property change dispatch as well.
+	body := msg.Decoder()
+
+	iface, err := body.String()
+	if err != nil {
 		return err
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for w := range c.watchers {
-		w.deliver(emitter, &msg.header, signal)
-	}
+	emitter, _ := ContextEmitter(ctx)
+	emitter = emitter.Object().Interface(iface)
 
+	// Decode the change map[string]Variant by hand, so that we can
+	// directly map each variant value to the correct property value
+	// directly.
+	_, err = body.Array(true, func(i int) error {
+		err := body.Struct(func() error {
+			propName, err := body.String()
+			if err != nil {
+				return err
+			}
+			var propSig Signature
+			if err := body.Value(ctx, &propSig); err != nil {
+				return err
+			}
+			t := propTypeFor(iface, propName)
+			var v reflect.Value
+			if t != nil {
+				v = reflect.New(t)
+			} else {
+				v = reflect.New(propSig.Type())
+			}
+			if err := body.Value(ctx, t); err != nil {
+				return err
+			}
+			if t != nil {
+				for w := range c.lockedWatchers() {
+					w.deliverProp(emitter, &msg.header, interfaceMethod{iface, propName}, v)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	var invalidated []string
+	if err := body.Value(ctx, &invalidated); err != nil {
+		return err
+	}
+	for _, prop := range invalidated {
+		t := propTypeFor(iface, prop)
+		if t == nil {
+			continue
+		}
+		for w := range c.lockedWatchers() {
+			w.deliverProp(emitter, &msg.header, interfaceMethod{iface, prop}, reflect.New(t))
+		}
+	}
 	return nil
 }
 
