@@ -76,13 +76,13 @@ func main() {
 					{
 						Name:  "peers",
 						Usage: "list peers",
-						Help:  "List peers connected to the bus",
+						Help:  "List peers connected to the bus.",
 						Run:   command.Adapt(runListPeers),
 					},
 					{
 						Name:  "interfaces",
 						Usage: "list interfaces [peer] [object] [interface]",
-						Help: `List bus interfaces
+						Help: `List bus interfaces.
 
 With no arguments, enumerates all discoverable interfaces on named bus
 services. Unique bus names (like ":1.234") are skipped because many of
@@ -106,32 +106,36 @@ In all cases, the full API for every interface is shown.
 			{
 				Name:  "ping",
 				Usage: "ping peer",
-				Help:  "Ping a peer",
+				Help:  "Ping a peer.",
 				Run:   command.Adapt(runPing),
 			},
 			{
 				Name:  "whois",
 				Usage: "whois peer",
-				Help:  "Get a peer's identity",
+				Help:  "Get a peer's identity.",
 				Run:   command.Adapt(runWhois),
 			},
 			{
 				Name:  "listen",
 				Usage: "listen",
-				Help:  "Listen to bus signals",
+				Help:  "Listen to bus signals.",
 				Run:   command.Adapt(runListen),
 			},
 			{
 				Name:  "features",
 				Usage: "features",
-				Help:  "List the message bus's feature flags",
+				Help:  "List the message bus's feature flags.",
 				Run:   command.Adapt(runFeatures),
 			},
 			{
 				Name:  "serve-peer",
 				Usage: "serve-peer",
-				Help:  "Serve the org.freedesktop.DBus.Peer interface",
-				Run:   command.Adapt(runServePeer),
+				Help: `Serve the org.freedesktop.DBus.Peer interface.
+
+The interface is implemented on all objects.
+
+For best results, combine with --names to register a service name on the bus that other tools can target.`,
+				Run: command.Adapt(runServePeer),
 			},
 			{
 				Name: "generate",
@@ -333,7 +337,7 @@ func runListen(env *command.Env) error {
 		case <-env.Context().Done():
 			return nil
 		case sig := <-w.Chan():
-			fmt.Printf("Signal %s.%s from %s on object %s:\n  %# v\n", sig.Sender.Name(), sig.Name, sig.Sender.Peer().Name(), sig.Sender.Object().Path(), pretty.Formatter(sig.Body))
+			fmt.Printf("Signal %s.%s from %s on object %s:\n  %# v\n\n", sig.Sender.Name(), sig.Name, sig.Sender.Peer().Name(), sig.Sender.Object().Path(), pretty.Formatter(sig.Body))
 			if sig.Overflow {
 				fmt.Println("OVERFLOW, some signals lost")
 			}
