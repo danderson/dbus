@@ -1,4 +1,4 @@
-package power
+package powermanagement
 
 import (
 	"context"
