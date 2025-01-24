@@ -58,12 +58,11 @@ func newConn(ctx context.Context, path string) (*Conn, error) {
 	}
 	ret.bus = ret.
 		Peer("org.freedesktop.DBus").
-		Object("/org/freedesktop/DBus").
-		Interface("org.freedesktop.DBus")
+		Object("/org/freedesktop/DBus")
 
 	go ret.readLoop()
 
-	if err := ret.bus.Call(ctx, "Hello", nil, &ret.clientID); err != nil {
+	if err := ret.bus.Interface(ifaceBus).Call(ctx, "Hello", nil, &ret.clientID); err != nil {
 		ret.Close()
 		return nil, fmt.Errorf("getting DBus client ID: %w", err)
 	}
@@ -94,7 +93,7 @@ type Conn struct {
 	t        transport.Transport
 	clientID string
 
-	bus Interface
+	bus Object
 
 	writeMu sync.Mutex
 	enc     fragments.Encoder
@@ -492,42 +491,12 @@ func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
 	return nil
 }
 
-// CallOption is a generic option for a DBus method call.
-type CallOption interface {
-	callOptionValue() byte
-}
-
-type callOption byte
-
-func (o callOption) callOptionValue() byte {
-	return byte(o)
-}
-
-// NoReply indicates that the method call is one-way, and that the
-// recipient must not generate a response message.
-func NoReply() CallOption {
-	return callOption(1)
-}
-
-// NoAutoStart indicates that the recipient should not be autostarted
-// if it's not already running.
-func NoAutoStart() CallOption {
-	return callOption(2)
-}
-
-// AllowInteraction indicates that the caller is willing to wait an
-// extended amount of time for the method call to be interactively
-// authorized by the user.
-func AllowInteraction() CallOption {
-	return callOption(4)
-}
-
 // call calls a remote method over the bus and records the response in
 // the provided pointer.
 //
 // It is the caller's responsibility to supply the correct types of
 // request.Body and response for the method being called.
-func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, iface, method string, body any, response any, opts ...CallOption) error {
+func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, iface, method string, body any, response any, noReply bool) error {
 	if response != nil && reflect.TypeOf(response).Kind() != reflect.Pointer {
 		return errors.New("response parameter in Call must be a pointer, or nil")
 	}
@@ -560,7 +529,7 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 
 	hdr := header{
 		Type:        msgTypeCall,
-		Flags:       0,
+		Flags:       contextCallFlags(ctx),
 		Version:     1,
 		Serial:      serial,
 		Destination: destination,
@@ -568,8 +537,8 @@ func (c *Conn) call(ctx context.Context, destination string, path ObjectPath, if
 		Interface:   iface,
 		Member:      method,
 	}
-	for _, f := range opts {
-		hdr.Flags |= f.callOptionValue()
+	if noReply {
+		hdr.Flags |= 0x1
 	}
 	if err := hdr.Valid(); err != nil {
 		return err

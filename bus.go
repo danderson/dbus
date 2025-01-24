@@ -10,6 +10,14 @@ import (
 	"github.com/danderson/dbus/fragments"
 )
 
+const (
+	ifaceBus        = "org.freedesktop.DBus"
+	ifacePeer       = "org.freedesktop.DBus.Peer"
+	ifaceIntrospect = "org.freedesktop.DBus.Introspectable"
+	ifaceObjects    = "org.freedesktop.DBus.ObjectManager"
+	ifaceProps      = "org.freedesktop.DBus.Properties"
+)
+
 // Claim creates a [Claim] for ownership of a bus name.
 //
 // Bus names may have multiple claims by different clients, in which
@@ -133,7 +141,7 @@ func (c *Claim) Request(opts ClaimOptions) error {
 	}
 
 	var resp uint32
-	return c.c.bus.Call(context.Background(), "RequestName", req, &resp)
+	return c.c.bus.Interface(ifaceBus).Call(context.Background(), "RequestName", req, &resp)
 }
 
 // Close abandons the claim.
@@ -156,7 +164,7 @@ func (c *Claim) Close() error {
 	close(c.owner)
 
 	var ignore uint32
-	return c.c.bus.Call(context.Background(), "ReleaseName", c.name, &ignore)
+	return c.c.bus.Interface(ifaceBus).Call(context.Background(), "ReleaseName", c.name, &ignore)
 }
 
 // Chan returns a channel that reports whether this claim is the
@@ -193,9 +201,9 @@ func (c *Claim) pump() {
 }
 
 // Peers returns a list of peers currently connected to the bus.
-func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
+func (c *Conn) Peers(ctx context.Context) ([]Peer, error) {
 	var names []string
-	if err := c.bus.Call(ctx, "ListNames", nil, &names, opts...); err != nil {
+	if err := c.bus.Interface(ifaceBus).Call(ctx, "ListNames", nil, &names); err != nil {
 		return nil, err
 	}
 	ret := make([]Peer, len(names))
@@ -209,9 +217,9 @@ func (c *Conn) Peers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
 //
 // An activatable [Peer] is started automatically when a request is
 // sent to it, and may shut down when idle.
-func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer, error) {
+func (c *Conn) ActivatablePeers(ctx context.Context) ([]Peer, error) {
 	var names []string
-	if err := c.bus.Call(ctx, "ListActivatableNames", nil, &names, opts...); err != nil {
+	if err := c.bus.Interface(ifaceBus).Call(ctx, "ListActivatableNames", nil, &names); err != nil {
 		return nil, err
 	}
 	ret := make([]Peer, len(names))
@@ -223,9 +231,9 @@ func (c *Conn) ActivatablePeers(ctx context.Context, opts ...CallOption) ([]Peer
 
 // BusID returns the unique globally unique ID of the bus to which the
 // Conn is connected.
-func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
+func (c *Conn) BusID(ctx context.Context) (string, error) {
 	var id string
-	if err := c.bus.Call(ctx, "GetId", nil, &id, opts...); err != nil {
+	if err := c.bus.Interface(ifaceBus).Call(ctx, "GetId", nil, &id); err != nil {
 		return "", err
 	}
 	return id, nil
@@ -233,9 +241,9 @@ func (c *Conn) BusID(ctx context.Context, opts ...CallOption) (string, error) {
 
 // Features returns a list of strings describing the optional features
 // that the bus supports.
-func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, error) {
+func (c *Conn) Features(ctx context.Context) ([]string, error) {
 	var features []string
-	if err := c.bus.GetProperty(ctx, "Features", &features, opts...); err != nil {
+	if err := c.bus.Interface(ifaceProps).GetProperty(ctx, "Features", &features); err != nil {
 		return nil, err
 	}
 	return features, nil
@@ -243,12 +251,12 @@ func (c *Conn) Features(ctx context.Context, opts ...CallOption) ([]string, erro
 
 func (c *Conn) addMatch(ctx context.Context, m *Match) error {
 	rule := m.filterString()
-	return c.bus.Call(ctx, "AddMatch", rule, nil)
+	return c.bus.Interface(ifaceBus).Call(ctx, "AddMatch", rule, nil)
 }
 
 func (c *Conn) removeMatch(ctx context.Context, m *Match) error {
 	rule := m.filterString()
-	return c.bus.Call(ctx, "RemoveMatch", rule, nil)
+	return c.bus.Interface(ifaceBus).Call(ctx, "RemoveMatch", rule, nil)
 }
 
 // NameOwnerChanged signals that a name has changed owners.

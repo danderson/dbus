@@ -55,8 +55,8 @@ func (p Peer) Object(path ObjectPath) Object {
 // although they are not strictly required to.
 //
 // [org.freedesktop.DBus.Peer]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-peer
-func (p Peer) Ping(ctx context.Context, opts ...CallOption) error {
-	return p.Conn().call(ctx, p.name, "/", "org.freedesktop.DBus.Peer", "Ping", nil, nil, opts...)
+func (p Peer) Ping(ctx context.Context) error {
+	return p.Object("/").Interface(ifacePeer).Call(ctx, "Ping", nil, nil)
 }
 
 // PeerIdentity describes the identity of a Peer.
@@ -100,9 +100,9 @@ type PeerIdentity struct {
 //
 // The returned identity is provided by the bus itself, and guaranteed
 // to be accurate (bugs in the bus implementation notwithstanding).
-func (p Peer) Identity(ctx context.Context, opts ...CallOption) (PeerIdentity, error) {
+func (p Peer) Identity(ctx context.Context) (PeerIdentity, error) {
 	var resp PeerIdentity
-	if err := p.Conn().bus.Call(ctx, "GetConnectionCredentials", p.name, &resp, opts...); err != nil {
+	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "GetConnectionCredentials", p.name, &resp); err != nil {
 		return PeerIdentity{}, err
 	}
 	// The SELinux security context is reported with a trailing null
@@ -115,9 +115,9 @@ func (p Peer) Identity(ctx context.Context, opts ...CallOption) (PeerIdentity, e
 //
 // Deprecated: use [Peer.Identity] instead, which returns more
 // complete identity information.
-func (p Peer) UID(ctx context.Context, opts ...CallOption) (uint32, error) {
+func (p Peer) UID(ctx context.Context) (uint32, error) {
 	var uid uint32
-	if err := p.Conn().bus.Call(ctx, "GetConnectionUnixUser", p.name, &uid, opts...); err != nil {
+	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "GetConnectionUnixUser", p.name, &uid); err != nil {
 		return 0, err
 	}
 	return uid, nil
@@ -134,9 +134,9 @@ func (p Peer) UID(ctx context.Context, opts ...CallOption) (uint32, error) {
 // PIDFD field of [PeerIdentity] provides a more robust handle for the
 // peer's process that is not vulnerable to time-of-check/time-of-use
 // attacks.
-func (p Peer) PID(ctx context.Context, opts ...CallOption) (uint32, error) {
+func (p Peer) PID(ctx context.Context) (uint32, error) {
 	var pid uint32
-	if err := p.Conn().bus.Call(ctx, "GetConnectionUnixProcessID", p.name, &pid, opts...); err != nil {
+	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "GetConnectionUnixProcessID", p.name, &pid); err != nil {
 		return 0, err
 	}
 	return pid, nil
@@ -153,9 +153,9 @@ func (p Peer) PID(ctx context.Context, opts ...CallOption) (uint32, error) {
 // it. Instead, verify the existence of the peer and the objects and
 // interfaces you need by attempting to use them, and handling errors
 // appropriately.
-func (p Peer) Exists(ctx context.Context, opts ...CallOption) (bool, error) {
+func (p Peer) Exists(ctx context.Context) (bool, error) {
 	var exists bool
-	if err := p.Conn().bus.Call(ctx, "NameHasOwner", p.name, &exists, opts...); err != nil {
+	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "NameHasOwner", p.name, &exists); err != nil {
 		return false, err
 	}
 	return exists, nil
@@ -167,9 +167,9 @@ func (p Peer) Exists(ctx context.Context, opts ...CallOption) (bool, error) {
 // ":1.42"), Owner returns the same Peer. If the Peer is a well-known
 // bus name (like "org.freedesktop.DBus"), Owner returns the Peer for
 // the current owner's unique connection name.
-func (p Peer) Owner(ctx context.Context, opts ...CallOption) (Peer, error) {
+func (p Peer) Owner(ctx context.Context) (Peer, error) {
 	var name string
-	if err := p.Conn().bus.Call(ctx, "GetNameOwner", p.name, &name, opts...); err != nil {
+	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "GetNameOwner", p.name, &name); err != nil {
 		return Peer{}, err
 	}
 	return p.Conn().Peer(name), nil
@@ -178,9 +178,9 @@ func (p Peer) Owner(ctx context.Context, opts ...CallOption) (Peer, error) {
 // QueuedOwners returns the list of peers that have requested
 // ownership of this peer's name, but do not currently own the
 // name. To retrieve the current owner, use [Peer.Owner].
-func (p Peer) QueuedOwners(ctx context.Context, opts ...CallOption) ([]Peer, error) {
+func (p Peer) QueuedOwners(ctx context.Context) ([]Peer, error) {
 	var names []string
-	if err := p.Conn().bus.Call(ctx, "ListQueuedOwners", p.name, &names, opts...); err != nil {
+	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "ListQueuedOwners", p.name, &names); err != nil {
 		return nil, err
 	}
 	ret := make([]Peer, len(names))

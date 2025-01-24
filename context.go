@@ -107,3 +107,25 @@ func contextPutFile(ctx context.Context, file *os.File) (idx uint32, err error) 
 	*fsp = append(*fsp, file)
 	return uint32(len(*fsp) - 1), nil
 }
+
+type allowInteractionContextKey struct{}
+
+func WithContextUserInteraction(ctx context.Context, allow bool) context.Context {
+	return context.WithValue(ctx, allowInteractionContextKey{}, allow)
+}
+
+type blockAutostartContextKey struct{}
+
+func WithContextAutostart(ctx context.Context, allow bool) context.Context {
+	return context.WithValue(ctx, blockAutostartContextKey{}, !allow)
+}
+
+func contextCallFlags(ctx context.Context) (flags byte) {
+	if v, ok := ctx.Value(allowInteractionContextKey{}).(bool); ok && v {
+		flags |= 0x4
+	}
+	if v, ok := ctx.Value(blockAutostartContextKey{}).(bool); ok && v {
+		flags |= 0x2
+	}
+	return flags
+}

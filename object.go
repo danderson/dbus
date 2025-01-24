@@ -60,9 +60,10 @@ func (o Object) Child(path string) Object {
 // implement the [org.freedesktop.DBus.Introspectable] interface.
 //
 // [org.freedesktop.DBus.Introspectable]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-introspectable
-func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*ObjectDescription, error) {
+func (o Object) Introspect(ctx context.Context) (*ObjectDescription, error) {
 	var resp string
-	if err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.Introspectable", "Introspect", nil, &resp, opts...); err != nil {
+	err := o.Interface(ifaceIntrospect).Call(ctx, "Introspect", nil, &resp)
+	if err != nil {
 		return nil, err
 	}
 	var ret ObjectDescription
@@ -79,10 +80,10 @@ func (o Object) Introspect(ctx context.Context, opts ...CallOption) (*ObjectDesc
 // implement the [org.freedesktop.DBus.ObjectManager] interface.
 //
 // [org.freedesktop.DBus.ObjectManager]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
-func (o Object) ManagedObjects(ctx context.Context, opts ...CallOption) (map[Object][]Interface, error) {
+func (o Object) ManagedObjects(ctx context.Context) (map[Object][]Interface, error) {
 	// object path -> interface name -> map[property name]value
 	var resp map[ObjectPath]map[string]map[string]Variant
-	err := o.Conn().call(ctx, o.p.name, o.path, "org.freedesktop.DBus.ObjectManager", "GetManagedObjects", nil, &resp, opts...)
+	err := o.Interface(ifaceObjects).Call(ctx, "GetManagedObjects", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
