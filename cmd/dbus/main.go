@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -133,11 +134,12 @@ In all cases, the full API for every interface is shown.
 				Run:   command.Adapt(runServePeer),
 			},
 			{
-				Name:     "generate",
-				Usage:    "generate interface",
+				Name: "generate",
+				Usage: `generate interface
+generate peer interface`,
 				Help:     "Generate an interface implementation from introspection data",
 				SetFlags: command.Flags(flax.MustBind, &generateArgs),
-				Run:      command.Adapt(runGenerate),
+				Run:      runGenerate,
 			},
 
 			command.HelpCommand(nil),
@@ -390,44 +392,77 @@ var generateArgs struct {
 	OutFile     string `flag:"out,default=gen.go,Output file path"`
 }
 
-func runGenerate(env *command.Env, interfaceName string) error {
+func findInterface(ctx context.Context, peer dbus.Peer, wantName string) (*dbus.InterfaceDescription, error) {
+	var errs []error
+	objs := heapq.New(func(a, b dbus.Object) int {
+		return cmp.Compare(a.Path(), b.Path())
+	})
+	objs.Add(peer.Object("/"))
+	for !objs.IsEmpty() {
+		obj, _ := objs.Pop()
+		introCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		desc, err := obj.Introspect(introCtx)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("introspecting %s: %w", obj, err))
+			continue
+		}
+		for name, iface := range desc.Interfaces {
+			if name == wantName {
+				fmt.Printf("Found definition of %s at %s\n", name, obj)
+				return iface, nil
+			}
+		}
+		for _, child := range desc.Children {
+			objs.Add(obj.Child(child))
+		}
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return nil, nil
+}
+
+func runGenerate(env *command.Env) error {
 	conn, err := busConn(env.Context())
 	if err != nil {
 		return fmt.Errorf("connecting to bus: %w", err)
 	}
 	defer conn.Close()
 
-	peers, err := conn.Peers(env.Context())
-	if err != nil {
-		return fmt.Errorf("listing peers: %w", err)
-	}
+	ctx, cancel := context.WithTimeout(env.Context(), time.Minute)
+	defer cancel()
+
 	var desc *dbus.InterfaceDescription
-findIface:
-	for _, peer := range peers {
-		if strings.HasPrefix(peer.Name(), ":") {
-			continue
+	switch len(env.Args) {
+	case 0:
+		return env.Usagef("generate requires at least one argument.")
+	case 1:
+		peers, err := conn.Peers(env.Context())
+		if err != nil {
+			return fmt.Errorf("listing peers: %w", err)
 		}
-		paths := []dbus.ObjectPath{"/"}
-		for len(paths) > 0 {
-			obj := peer.Object(paths[len(paths)-1])
-			paths = paths[:len(paths)-1]
-			d, err := obj.Introspect(env.Context())
-			if err != nil {
-				fmt.Printf("introspecting %s: %v\n", obj, err)
+		for _, peer := range peers {
+			if peer.IsUniqueName() {
 				continue
 			}
-			desc = d.Interfaces[interfaceName]
-			if desc != nil {
-				fmt.Printf("Found interface %s on %s\n", interfaceName, obj)
-				break findIface
+			desc, err = findInterface(ctx, peer, env.Args[0])
+			if err != nil {
+				fmt.Println(err)
+				continue
 			}
-			for _, child := range d.Children {
-				paths = append(paths, obj.Path().Child(child))
+			if desc != nil {
+				break
 			}
 		}
-	}
-	if desc == nil {
-		return fmt.Errorf("couldn't find any objects on the bus implementing %s", interfaceName)
+	case 2:
+		desc, err = findInterface(ctx, conn.Peer(env.Args[0]), env.Args[1])
+		if err != nil {
+			return err
+		}
+		if desc == nil {
+			return fmt.Errorf("peer %s does not have an object that implements %s", env.Args[0], env.Args[1])
+		}
 	}
 
 	f, err := os.Create(generateArgs.OutFile)
@@ -448,7 +483,7 @@ import "github.com/danderson/dbus"
 		return fmt.Errorf("closing generated file: %w", err)
 	}
 	if err != nil {
-		return fmt.Errorf("generate interface %s: %w", interfaceName, err)
+		return fmt.Errorf("generate interface %s: %w", desc.Name, err)
 	}
 	fmt.Printf("Wrote generated package to %s\n", generateArgs.OutFile)
 	return nil
