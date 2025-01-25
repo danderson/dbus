@@ -3,6 +3,7 @@ package dbusgen
 import (
 	"bytes"
 	"cmp"
+	"errors"
 	"fmt"
 	"go/format"
 	"reflect"
@@ -16,9 +17,13 @@ import (
 type generator struct {
 	out   bytes.Buffer
 	iface *dbus.InterfaceDescription
+	inits bytes.Buffer
 }
 
 func Interface(iface *dbus.InterfaceDescription) (string, error) {
+	if iface == nil {
+		return "", errors.New("no interface provided")
+	}
 	g := generator{iface: iface}
 	if err := g.Interface(iface); err != nil {
 		return "", err
@@ -40,9 +45,19 @@ func (g *generator) f(msg string, args ...any) {
 	fmt.Fprintf(&g.out, msg, args...)
 }
 
+func (g *generator) init(msg string, args ...any) {
+	fmt.Fprintf(&g.inits, msg, args...)
+}
+
 func (g *generator) Interface(iface *dbus.InterfaceDescription) error {
 	g.f(`
 type %[1]s struct { iface dbus.Interface }
+
+// New returns an interface to TODO
+func new(conn *dbus.Conn) %[1]s {
+  obj := conn.Peer("TODO").Object("TODO")
+  return Interface(obj)
+}
 
 // Interface returns a %[1]s on the given object.
 func Interface(obj dbus.Object) %[1]s {
@@ -71,7 +86,11 @@ func Interface(obj dbus.Object) %[1]s {
 	for _, s := range iface.Signals {
 		g.Signal(s)
 	}
-	g.RegisterSignals(iface)
+	if inits := g.inits.String(); len(inits) > 0 {
+		g.f(`func init() {
+%s
+}`, strings.TrimSpace(inits))
+	}
 	return nil
 }
 
@@ -90,7 +109,11 @@ func (g *generator) Method(m *dbus.MethodDescription) {
 	g.s(") {\n")
 	reqVar := ai.writeMkReq(g)
 	respVar := ao.writeMkRet(g)
-	g.f("err = iface.iface.Call(ctx, %q, %s, %s)\n", m.Name, reqVar, respVar)
+	if ao.noRet() {
+		g.f("err := iface.iface.Call(ctx, %q, %s, %s)\n", m.Name, reqVar, respVar)
+	} else {
+		g.f("err = iface.iface.Call(ctx, %q, %s, %s)\n", m.Name, reqVar, respVar)
+	}
 	ao.writeRet(g)
 	g.s("}\n\n")
 }
@@ -102,25 +125,16 @@ func (g *generator) Signal(s *dbus.SignalDescription) {
 type %[1]s %[4]s
 
 `, sname, g.iface.Name, s.Name, asStruct(s.Args).Type())
-}
-
-func (g *generator) RegisterSignals(iface *dbus.InterfaceDescription) {
-	if len(iface.Signals) == 0 {
-		return
-	}
-	g.s("func init() {\n")
-	for _, s := range iface.Signals {
-		g.f("dbus.RegisterSignalType(%q, %q, %s{})\n", iface.Name, s.Name, publicIdentifier(s.Name))
-	}
-	g.s("}\n\n")
+	g.init("dbus.RegisterSignalType[%s](%q, %q)\n", publicIdentifier(s.Name), g.iface.Name, s.Name)
 }
 
 func (g *generator) Property(prop *dbus.PropertyDescription) {
 	if prop.Constant || prop.Readable {
 		g.f(`
+// %[2]s returns the value of the property %[4]q.
 func (iface %[1]s) %[2]s(ctx context.Context) (%[3]s, error) {
   var ret %[3]s
-  err = iface.iface.GetProperty(ctx, %[4]q, &ret)
+  err := iface.iface.GetProperty(ctx, %[4]q, &ret)
   return ret, err
 }
 
@@ -129,12 +143,30 @@ func (iface %[1]s) %[2]s(ctx context.Context) (%[3]s, error) {
 
 	if prop.Writable {
 		g.f(`
+// %[2]s sets the value of property %[4]q to val.
 func (iface %[1]s) Set%[2]s(ctx context.Context, val %[3]s) error {
   return iface.iface.SetProperty(ctx, %[4]q, val)
 }
 
 `, publicIdentifier(g.iface.Name), publicIdentifier(prop.Name), prop.Type.Type(), prop.Name)
 	}
+
+	if !prop.EmitsSignal {
+		return
+	}
+
+	if prop.SignalIncludesValue {
+		g.f(`
+// %[1]sChanged signals that the value of property %[3]q has changed.
+type %[1]sChanged %[2]s
+`, publicIdentifier(prop.Name), prop.Type.Type(), prop.Name)
+	} else {
+		g.f(`
+// %[1]sChanged signals that the value of property %[2]q has changed.
+type %[1]sChanged struct{}
+`, publicIdentifier(prop.Name), prop.Name)
+	}
+	g.init("dbus.RegisterPropertyChangeType[%sChanged](%q, %q)\n", publicIdentifier(prop.Name), g.iface.Name, prop.Name)
 }
 
 func argName(n int, arg dbus.ArgumentDescription) string {
@@ -255,6 +287,10 @@ type argsOut struct {
 	args       []dbus.ArgumentDescription
 }
 
+func (a argsOut) noRet() bool {
+	return len(a.args) == 0
+}
+
 func (a argsOut) useStruct() bool {
 	return len(a.args) > 2
 }
@@ -279,7 +315,7 @@ func (a argsOut) writeStruct(g *generator) {
 }
 
 func (a argsOut) writeArgs(g *generator) {
-	if len(a.args) == 0 {
+	if a.noRet() {
 		g.f("error")
 	} else if a.useStruct() {
 		g.f("resp %sResponse, err error", a.methodName)

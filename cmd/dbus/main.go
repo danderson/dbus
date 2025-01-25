@@ -530,6 +530,9 @@ func runGenerate(env *command.Env) error {
 				break
 			}
 		}
+		if desc == nil {
+			return fmt.Errorf("could not find an object that implements %s on the bus", env.Args[0])
+		}
 	case 2:
 		desc, err = findInterface(ctx, conn.Peer(env.Args[0]), env.Args[1])
 		if err != nil {
