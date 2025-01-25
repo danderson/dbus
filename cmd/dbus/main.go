@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"os/signal"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -17,6 +18,7 @@ import (
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
 	"github.com/creachadair/mds/heapq"
+	"github.com/creachadair/mds/slice"
 	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/internal/dbusgen"
 	"github.com/kr/pretty"
@@ -109,9 +111,9 @@ interfaces that most objects implement:
 					},
 					{
 						Name:  "props",
-						Usage: "list props peer object interface",
+						Usage: "list props [peer] [object] [interface] [property]",
 						Help:  "List properties.",
-						Run:   command.Adapt(runListProps),
+						Run:   runListProps,
 					},
 				},
 			},
@@ -231,113 +233,116 @@ func runListInterfaces(env *command.Env) error {
 	}
 	defer conn.Close()
 
-	var peers []dbus.Peer
-	if len(env.Args) == 0 {
-		peers, err = conn.Peers(env.Context())
-		if err != nil {
-			return fmt.Errorf("listing peers: %w", err)
-		}
-		slices.SortFunc(peers, func(a, b dbus.Peer) int {
-			return cmp.Compare(a.Name(), b.Name())
-		})
-	} else {
-		peers = []dbus.Peer{conn.Peer(env.Args[0])}
-	}
-
-	var out indenter
-
+	args := growTo(env.Args, 3)
 	ctx, cancel := context.WithTimeout(env.Context(), time.Minute)
 	defer cancel()
 
-	objs := heapq.New(func(a, b dbus.Object) int {
-		return cmp.Compare(a.Path(), b.Path())
-	})
-	for _, peer := range peers {
-		if peer.IsUniqueName() {
-			continue
+	var out indenter
+	var prev dbus.Interface
+	for p, err := range listPeers(ctx, conn, args[0]) {
+		if err != nil {
+			out.v(err)
 		}
-
-		introCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
 		var ownerName string
-		owner, err := peer.Owner(introCtx)
+		owner, err := p.Owner(ctx)
 		if err != nil {
 			ownerName = fmt.Sprintf("getting owner: %v", err)
 		} else {
 			ownerName = owner.Name()
 		}
-		out.f("%s (%s)", peer.Name(), ownerName)
-		out.indent()
-
-		objs.Clear()
-		if len(env.Args) < 2 {
-			objs.Add(peer.Object("/"))
-		} else {
-			objs.Add(peer.Object(dbus.ObjectPath(env.Args[1])))
-		}
-		for !objs.IsEmpty() {
-			obj, _ := objs.Pop()
-			desc, err := obj.Introspect(introCtx)
+		for iface, err := range listInterfaces(ctx, p, args[1], args[2]) {
 			if err != nil {
-				out.v(obj.Path())
-				out.indent()
 				out.v(err)
-				out.dedent()
 				continue
 			}
-			for _, child := range desc.Children {
-				objs.Add(obj.Child(child))
+			if iface.Peer() != prev.Peer() {
+				out.indent(0)
+				if prev.Peer() != (dbus.Peer{}) {
+					out.s("")
+				}
+				out.f("%s (%s)", iface.Peer().Name(), ownerName)
+				out.indent(1)
+				out.v(iface.Object().Path())
+				out.indent(2)
+			} else if iface.Object() != prev.Object() {
+				out.indent(1)
+				out.v(iface.Object().Path())
+				out.indent(2)
 			}
 
-			ifaceNames := slices.Sorted(maps.Keys(desc.Interfaces))
-			printedObj := false
-			for _, ifaceName := range ifaceNames {
-				if len(env.Args) < 3 {
-					switch ifaceName {
-					case "org.freedesktop.DBus.Peer", "org.freedesktop.DBus.Properties", "org.freedesktop.DBus.Introspectable":
-						continue
-					}
-				} else if ifaceName != env.Args[2] {
-					continue
-				}
-				if !printedObj {
-					printedObj = true
-					out.v(obj.Path())
-					out.indent()
-				}
-				iface := desc.Interfaces[ifaceName]
-				out.v(iface)
-			}
-			if printedObj {
-				out.dedent()
-			}
+			out.v(iface.Description)
+			prev = iface.Interface
 		}
-
-		out.dedent()
-		out.s("")
 	}
 
 	return nil
 }
 
-func runListProps(env *command.Env, peer, path, ifaceName string) error {
+func runListProps(env *command.Env) error {
 	conn, err := busConn(env.Context())
 	if err != nil {
 		return fmt.Errorf("connecting to bus: %w", err)
 	}
 	defer conn.Close()
 
-	iface := conn.Peer(peer).Object(dbus.ObjectPath(path)).Interface(ifaceName)
+	args := growTo(env.Args, 4)
+	pf, err := regexp.Compile(args[3])
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(env.Context(), 10*time.Second)
 	defer cancel()
-	props, err := iface.GetAllProperties(ctx)
-	if err != nil {
-		return fmt.Errorf("listing properties of %s: %w", iface, err)
-	}
-	ks := slices.Sorted(maps.Keys(props))
-	for _, k := range ks {
-		fmt.Printf("%s: %v\n", k, props[k])
+	var out indenter
+	var prev dbus.Interface
+	for p, err := range listPeers(ctx, conn, args[0]) {
+		if err != nil {
+			out.indent(0)
+			out.v(err)
+			continue
+		}
+		for iface, err := range listInterfaces(ctx, p, args[1], args[2]) {
+			if err != nil {
+				out.indent(0)
+				out.v(err)
+				continue
+			}
+			if len(iface.Description.Properties) == 0 {
+				continue
+			}
+
+			props, err := iface.GetAllProperties(ctx)
+			if err != nil {
+				out.indent(0)
+				out.v(fmt.Errorf("listing properties of %s: %w", iface, err))
+				continue
+			}
+			ks := slices.Sorted(maps.Keys(props))
+			ks = slices.Collect(slice.Select(ks, pf.MatchString))
+			if len(ks) == 0 {
+				continue
+			}
+
+			if iface.Peer() != prev.Peer() {
+				out.indent(0)
+				out.v(iface.Peer().Name())
+				out.indent(1)
+				out.v(iface.Object().Path())
+			} else if iface.Object() != prev.Object() {
+				out.indent(1)
+				out.v(iface.Object().Path())
+			}
+			prev = iface.Interface
+
+			out.indent(2)
+			out.v(iface.Name())
+			out.indent(3)
+			for _, k := range ks {
+				if pf.MatchString(k) {
+					out.f("%s: %v", k, props[k])
+				}
+			}
+		}
 	}
 	return nil
 }

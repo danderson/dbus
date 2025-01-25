@@ -2,9 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
+	"regexp"
+	"slices"
+	"strings"
+
+	"github.com/creachadair/mds/heapq"
+	"github.com/danderson/dbus"
 )
 
 type indenter struct {
@@ -53,10 +62,85 @@ func (i *indenter) Write(bs []byte) (int, error) {
 	return ret, nil
 }
 
-func (i *indenter) indent() {
-	i.prefix += "  "
+func (i *indenter) indent(n int) {
+	i.prefix = strings.Repeat("  ", n)
 }
 
-func (i *indenter) dedent() {
-	i.prefix = i.prefix[:len(i.prefix)-2]
+func listPeers(ctx context.Context, conn *dbus.Conn, peerFilter string) iter.Seq2[dbus.Peer, error] {
+	return func(yield func(dbus.Peer, error) bool) {
+		f, err := regexp.Compile(peerFilter)
+		if err != nil {
+			yield(dbus.Peer{}, err)
+			return
+		}
+		peers, err := conn.Peers(ctx)
+		if err != nil {
+			yield(dbus.Peer{}, err)
+			return
+		}
+		for _, p := range peers {
+			if !f.MatchString(p.Name()) {
+				continue
+			}
+			if !yield(p, nil) {
+				return
+			}
+		}
+	}
+}
+
+type objectInterface struct {
+	dbus.Interface
+	Description *dbus.InterfaceDescription
+}
+
+func listInterfaces(ctx context.Context, peer dbus.Peer, objectFilter, interfaceFilter string) iter.Seq2[objectInterface, error] {
+	return func(yield func(objectInterface, error) bool) {
+		om, err := regexp.Compile(objectFilter)
+		if err != nil {
+			yield(objectInterface{}, err)
+			return
+		}
+		im, err := regexp.Compile(interfaceFilter)
+		if err != nil {
+			yield(objectInterface{}, err)
+			return
+		}
+
+		objs := heapq.New(dbus.Object.Compare)
+		objs.Add(peer.Object("/"))
+		for !objs.IsEmpty() {
+			obj, _ := objs.Pop()
+			desc, err := obj.Introspect(ctx)
+			if err != nil {
+				if !yield(objectInterface{}, err) {
+					return
+				}
+				continue
+			}
+			for _, child := range desc.Children {
+				objs.Add(obj.Child(child))
+			}
+			if !om.MatchString(string(obj.Path())) {
+				continue
+			}
+			ks := slices.Sorted(maps.Keys(desc.Interfaces))
+			for _, k := range ks {
+				if !im.MatchString(k) {
+					continue
+				}
+				iface := obj.Interface(k)
+				if !yield(objectInterface{iface, desc.Interfaces[k]}, nil) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func growTo(s []string, n int) []string {
+	for len(s) < n {
+		s = append(s, "")
+	}
+	return s
 }
