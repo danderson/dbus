@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"cmp"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -27,6 +28,13 @@ func (o Object) String() string {
 		return fmt.Sprintf("%s:<no object>", o.Peer())
 	}
 	return fmt.Sprintf("%s:%s", o.Peer(), o.path)
+}
+
+func (o Object) Compare(other Object) int {
+	if ret := o.Peer().Compare(other.Peer()); ret != 0 {
+		return ret
+	}
+	return cmp.Compare(o.Path(), other.Path())
 }
 
 // Interface returns a named interface on the object.

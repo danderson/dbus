@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -31,6 +32,13 @@ func (f Interface) String() string {
 		return fmt.Sprintf("%s:<no interface>", f.Object())
 	}
 	return fmt.Sprintf("%s:%s", f.Object(), f.name)
+}
+
+func (f Interface) Compare(other Interface) int {
+	if ret := f.Object().Compare(other.Object()); ret != 0 {
+		return ret
+	}
+	return cmp.Compare(f.Name(), other.Name())
 }
 
 // Call calls method on the interface with the given request body, and

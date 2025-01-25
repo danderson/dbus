@@ -2,6 +2,7 @@ package dbus
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 )
 
@@ -34,6 +35,13 @@ func (p Peer) String() string {
 // [unique bus name]: https://dbus.freedesktop.org/doc/dbus-specification.html#message-bus-names
 func (p Peer) IsUniqueName() bool {
 	return p.name[0] == ':'
+}
+
+func (p Peer) Compare(other Peer) int {
+	if ret := cmp.Compare(p.Conn().LocalName(), other.Conn().LocalName()); ret != 0 {
+		return ret
+	}
+	return cmp.Compare(p.Name(), other.Name())
 }
 
 // Object returns a named object on the peer.
