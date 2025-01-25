@@ -7,9 +7,6 @@ it where dbus wants a dict, it'll get padded wrong.
 support encoding maps as either a{xy} or a(xy). Various dbus protocols
 use the latter for some reason.
 
-maybe allow unmarshaling a property into a *any, so people can get
-properties of unknown type and then reflect on the output.
-
 Export fragment mapper funcs for people doing custom encoding stuff.
 
 Revisit the documentation for context helpers. The wording doesn't
