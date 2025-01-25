@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"reflect"
 	"slices"
 
@@ -70,6 +71,17 @@ func (e *encoderGen) get(t reflect.Type) (ret fragments.EncoderFunc, err error) 
 		return e.newMarshalEncoder(), nil
 	}
 
+	switch t {
+	case reflect.TypeFor[*os.File]():
+		return e.newFileEncoder(), nil
+	case reflect.TypeFor[ObjectPath]():
+		return e.newObjectPathEncoder(), nil
+	case reflect.TypeFor[Signature]():
+		return e.newSignatureEncoder(), nil
+	case reflect.TypeFor[Variant]():
+		return e.newVariantEncoder(), nil
+	}
+
 	switch t.Kind() {
 	case reflect.Pointer:
 		return e.newPtrEncoder(t)
@@ -124,6 +136,59 @@ func (e *encoderGen) newMarshalEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		m := v.Interface().(Marshaler)
 		return m.MarshalDBus(ctx, e)
+	}
+}
+
+func (e *encoderGen) newFileEncoder() fragments.EncoderFunc {
+	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+		f := v.Interface().(*os.File)
+		if f == nil {
+			return errors.New("cannot marshal nil *os.File")
+		}
+		idx, err := contextPutFile(ctx, f)
+		if err != nil {
+			return err
+		}
+		e.Uint32(idx)
+		return nil
+	}
+}
+
+func (e *encoderGen) newObjectPathEncoder() fragments.EncoderFunc {
+	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+		p := v.Interface().(ObjectPath)
+		e.String(string(p.Clean()))
+		return nil
+	}
+}
+
+func (e *encoderGen) newSignatureEncoder() fragments.EncoderFunc {
+	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+		s := v.Interface().(Signature).String()
+		if len(s) > 255 {
+			return fmt.Errorf("signature exceeds maximum length of 255 bytes")
+		}
+		e.Uint8(uint8(len(s)))
+		e.Write([]byte(s))
+		e.Uint8(0)
+		return nil
+	}
+}
+
+func (e *encoderGen) newVariantEncoder() fragments.EncoderFunc {
+	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+		variant := v.Interface().(Variant)
+		sig, err := SignatureOf(variant.Value)
+		if err != nil {
+			return err
+		}
+		if err := e.Value(ctx, sig); err != nil {
+			return err
+		}
+		if err := e.Value(ctx, variant.Value); err != nil {
+			return err
+		}
+		return nil
 	}
 }
 

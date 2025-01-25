@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"os"
 	"reflect"
 	"testing"
 )
@@ -22,7 +23,7 @@ func TestSignatureOf(t *testing.T) {
 		{string(""), "s"},
 		{Signature{}, "g"},
 		{ObjectPath(""), "o"},
-		{File{}, "h"},
+		{(*os.File)(nil), "h"},
 		{[]string{}, "as"},
 		{[4]byte{}, "ay"},
 		{[][]string{}, "aas"},
@@ -92,7 +93,7 @@ func TestParseSignature(t *testing.T) {
 		{"s", reflect.TypeFor[string](), false},
 		{"g", reflect.TypeFor[Signature](), false},
 		{"o", reflect.TypeFor[ObjectPath](), false},
-		{"h", reflect.TypeFor[File](), false},
+		{"h", reflect.TypeFor[*os.File](), false},
 		{"as", reflect.TypeFor[[]string](), false},
 		{"ay", reflect.TypeFor[[]byte](), false},
 		{"aas", reflect.TypeFor[[][]string](), false},

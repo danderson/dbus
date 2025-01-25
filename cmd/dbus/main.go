@@ -380,8 +380,8 @@ func runWhois(env *command.Env, peer string) error {
 		fmt.Println("UID:", *creds.UID)
 	}
 	fmt.Println("GIDs:", creds.GIDs)
-	if creds.PIDFD.File != nil {
-		fmt.Println("PIDFD:", creds.PIDFD.File.Fd())
+	if creds.PIDFD != nil {
+		fmt.Println("PIDFD:", creds.PIDFD.Fd())
 	}
 	if creds.SecurityLabel != nil {
 		fmt.Println("Security label:", string(creds.SecurityLabel))

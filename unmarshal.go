@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"reflect"
 	"slices"
 
@@ -107,6 +108,17 @@ func (d *decoderGen) get(t reflect.Type) (ret fragments.DecoderFunc, err error) 
 		return d.newAddrMarshalDecoder(t), nil
 	}
 
+	switch t {
+	case reflect.TypeFor[*os.File]():
+		return d.newFileDecoder(), nil
+	case reflect.TypeFor[ObjectPath]():
+		return d.newObjectPathDecoder(), nil
+	case reflect.TypeFor[Signature]():
+		return d.newSignatureDecoder(), nil
+	case reflect.TypeFor[Variant]():
+		return d.newVariantDecoder(), nil
+	}
+
 	switch t.Kind() {
 	case reflect.Pointer:
 		// Note, pointers to Unmarshaler are handled above.
@@ -151,6 +163,69 @@ func (d *decoderGen) newMarshalDecoder(t reflect.Type) fragments.DecoderFunc {
 		}
 		m := v.Interface().(Unmarshaler)
 		return m.UnmarshalDBus(ctx, d)
+	}
+}
+
+func (d *decoderGen) newFileDecoder() fragments.DecoderFunc {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		idx, err := d.Uint32()
+		if err != nil {
+			return err
+		}
+		file := contextFile(ctx, idx)
+		if file == nil {
+			return errors.New("cannot unmarshal File: no file descriptor available")
+		}
+		v.Set(reflect.ValueOf(file))
+		return nil
+	}
+}
+
+func (d *decoderGen) newObjectPathDecoder() fragments.DecoderFunc {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		s, err := d.String()
+		if err != nil {
+			return err
+		}
+		s = string(ObjectPath(s).Clean())
+		v.SetString(s)
+		return nil
+	}
+}
+
+func (d *decoderGen) newSignatureDecoder() fragments.DecoderFunc {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		u8, err := d.Uint8()
+		if err != nil {
+			return err
+		}
+		bs, err := d.Read(int(u8) + 1)
+		sig, err := ParseSignature(string(bs[:len(bs)-1]))
+		if err != nil {
+			return err
+		}
+		v.Set(reflect.ValueOf(sig))
+		return nil
+	}
+}
+
+func (d *decoderGen) newVariantDecoder() fragments.DecoderFunc {
+	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+		var sig Signature
+		if err := d.Value(ctx, &sig); err != nil {
+			return fmt.Errorf("reading Variant signature: %w", err)
+		}
+		innerType := sig.Type()
+		if innerType == nil {
+			return fmt.Errorf("unsupported Variant type signature %q", sig)
+		}
+		inner := reflect.New(innerType)
+		if err := d.Value(ctx, inner.Interface()); err != nil {
+			return fmt.Errorf("reading Variant value (signature %q): %w", sig, err)
+		}
+		res := Variant{inner.Elem().Interface()}
+		v.Set(reflect.ValueOf(res))
+		return nil
 	}
 }
 

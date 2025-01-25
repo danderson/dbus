@@ -1,37 +1,13 @@
 package dbus
 
 import (
-	"context"
 	"path"
-	"reflect"
 	"strings"
-
-	"github.com/danderson/dbus/fragments"
 )
 
 // An ObjectPath is a filesystem-like path for an [Object] exposed on
 // over DBus.
 type ObjectPath string
-
-func (p ObjectPath) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
-	e.String(string(p.Clean()))
-	return nil
-}
-
-func (p *ObjectPath) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
-	var s string
-	if err := d.Value(ctx, &s); err != nil {
-		return err
-	}
-	*p = ObjectPath(s).Clean()
-	return nil
-}
-
-func (p ObjectPath) IsDBusStruct() bool { return false }
-
-var objectPathSignature = mkSignature(reflect.TypeFor[ObjectPath](), "o")
-
-func (p ObjectPath) SignatureDBus() Signature { return objectPathSignature }
 
 // Clean returns the result of applying [path.Clean] to the object
 // path.

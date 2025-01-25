@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"os"
 )
 
 // Peer is a named bus endpoint.
@@ -77,7 +78,7 @@ type PeerIdentity struct {
 	// PIDFD is a file handle that represents the Peer's
 	// process. PIDFD should be preferred over PID, as it is not
 	// vulnerable to time-of-check/time-of-use vulnerabilities.
-	PIDFD *File `dbus:"key=ProcessFD"`
+	PIDFD *os.File `dbus:"key=ProcessFD"`
 	// PID is the Unix process ID of the peer, or nil if pid
 	// information is not available. Note that PIDs are not unique
 	// identities, and therefore are vulnerable to

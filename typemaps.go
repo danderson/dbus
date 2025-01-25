@@ -1,6 +1,7 @@
 package dbus
 
 import (
+	"os"
 	"reflect"
 
 	"github.com/creachadair/mds/mapset"
@@ -23,7 +24,7 @@ var (
 		'v': reflect.TypeFor[Variant](),
 		'g': reflect.TypeFor[Signature](),
 		'o': reflect.TypeFor[ObjectPath](),
-		'h': reflect.TypeFor[File](),
+		'h': reflect.TypeFor[*os.File](),
 	}
 
 	// typeToStr maps basic DBus types that aren't basic Go types to
@@ -32,7 +33,7 @@ var (
 		reflect.TypeFor[Variant]():    'v',
 		reflect.TypeFor[Signature]():  'g',
 		reflect.TypeFor[ObjectPath](): 'o',
-		reflect.TypeFor[File]():       'h',
+		reflect.TypeFor[*os.File]():   'h',
 	}
 
 	// kindToStr maps reflect.Kinds to their corresponding DBus type

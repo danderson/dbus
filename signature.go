@@ -1,14 +1,12 @@
 package dbus
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
-
-	"github.com/danderson/dbus/fragments"
 )
 
 // A Signature describes the type of a DBus value.
@@ -44,34 +42,6 @@ func (s Signature) asStruct() Signature {
 // in the DBus specification.
 func (s Signature) String() string {
 	return s.str
-}
-
-func (s Signature) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
-	if len(s.str) > 255 {
-		return fmt.Errorf("signature exceeds maximum length of 255 bytes")
-	}
-	e.Uint8(uint8(len(s.str)))
-	e.Write([]byte(s.str))
-	e.Uint8(0)
-	return nil
-}
-
-func (s *Signature) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
-	u8, err := d.Uint8()
-	if err != nil {
-		return err
-	}
-	bs, err := d.Read(int(u8) + 1)
-	*s, err = ParseSignature(string(bs[:len(bs)-1]))
-	return err
-}
-
-func (s Signature) IsDBusStruct() bool { return false }
-
-var signatureSignature = mkSignature(reflect.TypeFor[Signature](), "g")
-
-func (s Signature) SignatureDBus() Signature {
-	return signatureSignature
 }
 
 // IsZero reports whether the signature is the zero value. A zero
@@ -271,6 +241,10 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 	}
 	t = reflect.PointerTo(t)
 
+	if t == reflect.TypeFor[*os.File]() {
+		return mkSignature(t, "h"), nil
+	}
+
 	if t.Implements(marshalerType) || t.Implements(unmarshalerType) {
 		if t.Elem().Implements(signerType) {
 			return reflect.Zero(t.Elem()).Interface().(signer).SignatureDBus(), nil
@@ -282,6 +256,15 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 	// Strip off the last pointer layer, the rest of the signature
 	// logic operates on the leaf type.
 	t = t.Elem()
+
+	switch t {
+	case reflect.TypeFor[Signature]():
+		return mkSignature(t, "g"), nil
+	case reflect.TypeFor[ObjectPath]():
+		return mkSignature(t, "o"), nil
+	case reflect.TypeFor[Variant]():
+		return mkSignature(t, "v"), nil
+	}
 
 	if ret := kindToType[t.Kind()]; ret != nil {
 		return mkSignature(ret, string(kindToStr[t.Kind()])), nil
