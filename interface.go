@@ -61,7 +61,8 @@ func (f Interface) OneWay(ctx context.Context, method string, body any) error {
 // GetProperty reads the value of the given property into val.
 //
 // It is the caller's responsibility to match the value's type to the
-// type offered by the interface.
+// type offered by the interface. val may also be of type *any to
+// retrieve a property without knowing its type.
 func (f Interface) GetProperty(ctx context.Context, name string, val any) error {
 	want := reflect.ValueOf(val)
 	if !want.IsValid() {

@@ -107,6 +107,12 @@ interfaces that most objects implement:
 `,
 						Run: runListInterfaces,
 					},
+					{
+						Name:  "props",
+						Usage: "list props peer object interface",
+						Help:  "List properties.",
+						Run:   command.Adapt(runListProps),
+					},
 				},
 			},
 			{
@@ -312,6 +318,27 @@ func runListInterfaces(env *command.Env) error {
 		out.s("")
 	}
 
+	return nil
+}
+
+func runListProps(env *command.Env, peer, path, ifaceName string) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	iface := conn.Peer(peer).Object(dbus.ObjectPath(path)).Interface(ifaceName)
+	ctx, cancel := context.WithTimeout(env.Context(), 10*time.Second)
+	defer cancel()
+	props, err := iface.GetAllProperties(ctx)
+	if err != nil {
+		return fmt.Errorf("listing properties of %s: %w", iface, err)
+	}
+	ks := slices.Sorted(maps.Keys(props))
+	for _, k := range ks {
+		fmt.Printf("%s: %v\n", k, props[k])
+	}
 	return nil
 }
 
