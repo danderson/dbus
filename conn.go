@@ -594,7 +594,7 @@ func (c *Conn) EmitSignal(ctx context.Context, obj ObjectPath, signal any) error
 // interfaceName.
 //
 // fn must have one of the following type signatures, where ReqType
-// and RetType are any types compatible with DBus:
+// and RetType determine the method's [Signature].
 //
 //	func(context.Context, dbus.ObjectPath) error
 //	func(context.Context, dbus.ObjectPath) (RetType, error)

@@ -34,6 +34,8 @@ func (f Interface) String() string {
 	return fmt.Sprintf("%s:%s", f.Object(), f.name)
 }
 
+// Compare compares two interfaces, with the same convention as
+// [cmp.Compare].
 func (f Interface) Compare(other Interface) int {
 	if ret := f.Object().Compare(other.Object()); ret != 0 {
 		return ret

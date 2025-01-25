@@ -12,11 +12,12 @@ import (
 
 const maxWatcherQueue = 20
 
-// Watch watches the bus for signals from other bus participants.
+// Watch watches the bus for notifications from other bus
+// participants.
 //
-// A newly created Watcher delivers no signals. The caller must use
-// [Watcher.Match] to specify which signals the Watcher should
-// provide.
+// A newly created Watcher delivers no notifications. The caller must
+// use [Watcher.Match] to specify which signals and property changes
+// the Watcher should provide.
 func (c *Conn) Watch() *Watcher {
 	w := &Watcher{
 		conn:        c,

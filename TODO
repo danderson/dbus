@@ -11,3 +11,7 @@ maybe allow unmarshaling a property into a *any, so people can get
 properties of unknown type and then reflect on the output.
 
 Export fragment mapper funcs for people doing custom encoding stuff.
+
+Revisit the documentation for context helpers. The wording doesn't
+feel great, and I'm not sure I documented the contexts in which
+various information is available exactly correctly.

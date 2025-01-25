@@ -31,11 +31,6 @@ func typeErr(t reflect.Type, reason string, args ...any) error {
 	return TypeError{ts, fmt.Errorf(reason, args...)}
 }
 
-type Error interface {
-	error
-	ErrorName() string
-}
-
 // CallError is the error returned from failed DBus method calls.
 type CallError struct {
 	// Name is the error name provided by the remote peer.

@@ -34,18 +34,25 @@ func withContextHeader(ctx context.Context, conn *Conn, hdr *header) context.Con
 // DBus signal.
 type emitterContextKey struct{}
 
-// ContextEmitter extracts the current DBus emitter information from
-// ctx, and reports whether any emitter information was present.
+// ContextEmitter returns the emitter value from ctx, and reports
+// whether an emitter was found.
+//
+// Emitter information is available in [Unmarshaler]'s UnmarshalDBus
+// method, when decoding a signal type.
 func ContextEmitter(ctx context.Context) (Interface, bool) {
 	return getCtx[Interface](ctx, emitterContextKey{})
 }
 
-// emitterContextKey is the context key that carries the sender of a
+// senderContextKey is the context key that carries the sender of a
 // DBus message.
 type senderContextKey struct{}
 
-// ContextSender extracts the current DBus sender information from
-// ctx, and reports whether any sender information was present.
+// ContextSender returns the sender found in ctx, and reports whether
+// a sender was found.
+//
+// Sender information is available in [Unmarshaler]'s UnmarshalDBus
+// method when decoding method arguments and signal types, and in
+// method handlers when handling incoming method calls.
 func ContextSender(ctx context.Context) (Peer, bool) {
 	return getCtx[Peer](ctx, senderContextKey{})
 }
@@ -54,9 +61,11 @@ func ContextSender(ctx context.Context) (Peer, bool) {
 // DBus message.
 type destContextKey struct{}
 
-// ContextSender extracts the current DBus destination information
-// from ctx, and reports whether any destination information was
-// present.
+// ContextDestination returns the destination found in ctx, and
+// reports whether a destination was found.
+//
+// Destination information is available in [Marshaler]'s MarshalDBus
+// method when encoding method return values.
 func ContextDestination(ctx context.Context) (Peer, bool) {
 	return getCtx[Peer](ctx, destContextKey{})
 }
@@ -133,13 +142,12 @@ type blockAutostartContextKey struct{}
 // Services that provide DBus APIs can elect to be "bus
 // activated". Bus activated peers are present on the bus even when
 // their underlying service isn't running, and the bus arranges to
-// start them seamlessly when a method call is directed to them.
+// start them seamlessly when something communicates with them.
 //
-// By default, method calls trigger bus activation as needed and
-// clients don't need to be aware of this feature. If auto-starting
-// services is undesirable, WithContextAutostart can be used to make
-// calls fail with a [CallError] if making the call would require bus
-// activation of a service.
+// By default, method calls trigger bus activation, and clients don't
+// need to be aware of this feature. If auto-starting services is
+// undesirable, WithContextAutostart can be used to make calls fail
+// with a [CallError] if they would trigger a bus activation.
 func WithContextAutostart(ctx context.Context, allow bool) context.Context {
 	return context.WithValue(ctx, blockAutostartContextKey{}, !allow)
 }

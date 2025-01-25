@@ -304,8 +304,10 @@ func (p *PropertyDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElemen
 	return nil
 }
 
+// ArgumentDescription describes a DBus method's input or output, or a
+// signal's argument.
 type ArgumentDescription struct {
-	Name string
+	Name string // optional
 	Type Signature
 }
 

@@ -18,11 +18,11 @@ const (
 	ifaceProps      = "org.freedesktop.DBus.Properties"
 )
 
-// Claim creates a [Claim] for ownership of a bus name.
+// Claim requests ownership of a bus name.
 //
-// Bus names may have multiple claims by different clients, in which
-// case behavior is determined by the [ClaimOptions] set by each
-// claimant.
+// Bus names may have multiple active claims by different clients, but
+// only one active owner at a time. The [ClaimOptions] set by each
+// claimant determines the owner and rules of succession.
 //
 // Callers should monitor [Claim.Chan] to find out if and when the
 // name gets assigned to them.
@@ -67,8 +67,8 @@ type ClaimOptions struct {
 	// TryReplace is whether to attempt to replace the current owner
 	// of Name, if the name already has an owner.
 	//
-	// Replacement is only permitted if the current primary owner
-	// requested the name with AllowReplacement set. Otherwise, the
+	// Replacement is only permitted if the current primary owner made
+	// its claim with the AllowReplacement option set. Otherwise, the
 	// request for ownership joins the backup queue or returns an
 	// error, depending on the NoQueue setting.
 	//
@@ -76,7 +76,7 @@ type ClaimOptions struct {
 	// request is made. If the attempt fails and this claim joins the
 	// backup queue, and later on the owner changes its settings to
 	// allow replacement, this queued claim must explicitly repeat its
-	// request with TryReplace set to take advantage of it.
+	// request to take advantage of it.
 	TryReplace bool
 	// NoQueue, if set, causes this claim to never join the backup
 	// queue for any reason.
@@ -215,8 +215,8 @@ func (c *Conn) Peers(ctx context.Context) ([]Peer, error) {
 
 // ActivatablePeers returns a list of activatable peers.
 //
-// An activatable [Peer] is started automatically when a request is
-// sent to it, and may shut down when idle.
+// An activatable Peer is started automatically when a request is sent
+// to it, and may shut down when idle.
 func (c *Conn) ActivatablePeers(ctx context.Context) ([]Peer, error) {
 	var names []string
 	if err := c.bus.Interface(ifaceBus).Call(ctx, "ListActivatableNames", nil, &names); err != nil {
@@ -229,8 +229,8 @@ func (c *Conn) ActivatablePeers(ctx context.Context) ([]Peer, error) {
 	return ret, nil
 }
 
-// BusID returns the unique globally unique ID of the bus to which the
-// Conn is connected.
+// BusID returns the globally unique ID of the bus to which the Conn
+// is connected.
 func (c *Conn) BusID(ctx context.Context) (string, error) {
 	var id string
 	if err := c.bus.Interface(ifaceBus).Call(ctx, "GetId", nil, &id); err != nil {

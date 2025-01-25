@@ -16,6 +16,10 @@ var (
 	propTypeToName = map[reflect.Type]interfaceMember{}
 )
 
+// RegisterPropertyChangeType registers T as the type to use when
+// reporting a property change for the given property.
+//
+// Panics if the property already has a registered type.
 func RegisterPropertyChangeType[T any](interfaceName, propertyName string) {
 	k := interfaceMember{interfaceName, propertyName}
 	t := reflect.TypeFor[T]()
@@ -38,8 +42,7 @@ func RegisterPropertyChangeType[T any](interfaceName, propertyName string) {
 // RegisterSignalType registers T as the struct type to use when
 // decoding the body of the given signal name.
 //
-// RegisterSignalType panics if the signal already has a registered
-// type.
+// Panics if the signal already has a registered type.
 func RegisterSignalType[T any](interfaceName, signalName string) {
 	k := interfaceMember{interfaceName, signalName}
 	t := reflect.TypeFor[T]()
