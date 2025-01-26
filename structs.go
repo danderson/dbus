@@ -92,6 +92,22 @@ func (f *structField) GetWithAlloc(structVal reflect.Value) reflect.Value {
 	return v
 }
 
+func (f *structField) StringGetter() func(reflect.Value) string {
+	if f.Type.Kind() == reflect.Pointer {
+		return func(structVal reflect.Value) string {
+			v := derefZero(f.GetWithZero(structVal))
+			if !v.IsValid() {
+				return ""
+			}
+			return v.String()
+		}
+	} else {
+		return func(structVal reflect.Value) string {
+			return f.GetWithZero(structVal).String()
+		}
+	}
+}
+
 func (f *structField) String() string {
 	var ret strings.Builder
 	kindStr := ""

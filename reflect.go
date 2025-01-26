@@ -46,24 +46,6 @@ func derefAlloc(v reflect.Value) reflect.Value {
 	return v
 }
 
-// TODO: move to structField method?
-func getter[T any](f *structField) func(reflect.Value) T {
-	if f.Type.Kind() == reflect.Pointer {
-		return func(v reflect.Value) T {
-			v = derefZero(f.GetWithZero(v))
-			if !v.IsValid() {
-				var zero T
-				return zero
-			}
-			return v.Interface().(T)
-		}
-	} else {
-		return func(v reflect.Value) T {
-			return f.GetWithZero(v).Interface().(T)
-		}
-	}
-}
-
 // allocSteps partitions a multi-hop traversal of struct fields into
 // segments that end at either the final value, or at a struct pointer
 // that might be nil.

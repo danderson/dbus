@@ -26,7 +26,7 @@ type Match struct {
 type signalMatch struct {
 	interfaceMember
 	stringFields map[int]func(reflect.Value) string
-	objectFields map[int]func(reflect.Value) ObjectPath
+	objectFields map[int]func(reflect.Value) string
 }
 
 // MatchNotification returns a match for the given notification.
@@ -53,7 +53,7 @@ func MatchNotification[NotificationT any]() *Match {
 	sm := signalMatch{
 		interfaceMember: sig,
 		stringFields:    map[int]func(reflect.Value) string{},
-		objectFields:    map[int]func(reflect.Value) ObjectPath{},
+		objectFields:    map[int]func(reflect.Value) string{},
 	}
 
 	inf, err := getStructInfo(bt)
@@ -63,9 +63,9 @@ func MatchNotification[NotificationT any]() *Match {
 	for i, field := range inf.StructFields {
 		fieldBottom := derefType(field.Type)
 		if fieldBottom == reflect.TypeFor[ObjectPath]() {
-			sm.objectFields[i] = getter[ObjectPath](field)
+			sm.objectFields[i] = field.StringGetter()
 		} else if fieldBottom.Kind() == reflect.String {
-			sm.stringFields[i] = getter[string](field)
+			sm.stringFields[i] = field.StringGetter()
 		}
 	}
 
@@ -94,7 +94,7 @@ func (m *Match) filterString() string {
 		kv("path", o.String())
 	}
 	if p, ok := m.objectPrefix.GetOK(); ok {
-		ms = append(ms, "path_namespace="+p.String())
+		kv("path_namespace", p.String())
 	}
 	if pm, ok := m.property.GetOK(); ok {
 		kv("interface", "org.freedesktop.DBus.Properties")
@@ -157,12 +157,12 @@ func (m *Match) matchesSignal(hdr *header, body reflect.Value) bool {
 		}
 		for i, want := range m.argPath {
 			if f := sm.stringFields[i]; f != nil {
-				if got := f(body.Elem()); got != want.String() && !ObjectPath(got).IsChildOf(want) {
+				if got := ObjectPath(f(body.Elem())); got != want && !got.IsChildOf(want) {
 					return false
 				}
 			}
 			if f := sm.objectFields[i]; f != nil {
-				if got := f(body.Elem()); got != want && !got.IsChildOf(want) {
+				if got := ObjectPath(f(body.Elem())); got != want && !got.IsChildOf(want) {
 					return false
 				}
 			}
@@ -210,10 +210,10 @@ func (m *Match) Peer(p Peer) *Match {
 	return m
 }
 
-// Object restricts the match to a single source Object.
-func (m *Match) Object(o Object) *Match {
+// Object restricts the match to a single source path.
+func (m *Match) Object(o ObjectPath) *Match {
 	m.objectPrefix = value.Absent[ObjectPath]()
-	m.object = value.Just(o.Path().Clean())
+	m.object = value.Just(o.Clean())
 	return m
 }
 
@@ -255,7 +255,7 @@ func (m *Match) ArgStr(i int, val string) *Match {
 }
 
 // ArgPathPrefix restricts the Match to signals whose i-th body field
-// is an object path with the given prefix.
+// is a string or ObjectPath with the given prefix.
 //
 // ArgPathPrefix can only be used on signal matches, not property
 // matches.
