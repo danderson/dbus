@@ -51,3 +51,11 @@ func (iface Monitor) BackgroundApps(ctx context.Context) ([]App, error) {
 	}
 	return ret, nil
 }
+
+// BackgroundAppsChanged signals that the list of background apps has
+// changed.
+type BackgroundAppsChanged []App
+
+func init() {
+	dbus.RegisterPropertyChangeType[BackgroundAppsChanged]("org.freedesktop.background.Monitor", "BackgroundApps")
+}

@@ -116,9 +116,6 @@ func (w *Watcher) Chan() <-chan *Notification {
 // matches. Use of remove is optional, and may be ignored if the set
 // of matches doesn't need to change for the lifetime of the Watcher.
 func (w *Watcher) Match(m *Match) (remove func(), err error) {
-	// Prevent later thread-unsafe mutation
-	m = m.clone()
-
 	if err = w.conn.addMatch(context.Background(), m); err != nil {
 		return nil, err
 	}

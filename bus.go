@@ -35,12 +35,12 @@ func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
 		pumpStopped: make(chan struct{}),
 		last:        false,
 	}
-	_, err := ret.w.Match(MatchSignal[NameAcquired]().ArgStr(0, name))
+	_, err := ret.w.Match(MatchNotification[NameAcquired]().ArgStr(0, name))
 	if err != nil {
 		ret.w.Close()
 		return nil, err
 	}
-	_, err = ret.w.Match(MatchSignal[NameLost]().ArgStr(0, name))
+	_, err = ret.w.Match(MatchNotification[NameLost]().ArgStr(0, name))
 	if err != nil {
 		ret.w.Close()
 		return nil, err
