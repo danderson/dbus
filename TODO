@@ -2,12 +2,4 @@ Figure out an approach to fuzz Marshal/Unmarshal.
 
 Export fragment mapper funcs for people doing custom encoding stuff.
 
-Revisit the documentation for context helpers. The wording doesn't
-feel great, and I'm not sure I documented the contexts in which
-various information is available exactly correctly.
-
-Move signature length checking to parse time, rather than serialization time.
-
 Use a generic Nested[T] in test helpers to reduce boilerplate.
-
-InlineLayout inside any can produce invalid wire format, needs a check

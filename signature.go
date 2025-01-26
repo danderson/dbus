@@ -85,6 +85,12 @@ func ParseSignature(sig string) (Signature, error) {
 		return Signature{}, err
 	}
 
+	if len(sig) > 255 {
+		err := fmt.Errorf("type signature is too long")
+		strToSignature.SetErr(sig, err)
+		return Signature{}, err
+	}
+
 	var (
 		rest  = sig
 		parts []reflect.Type
@@ -242,6 +248,10 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 	// below.
 	defer func(t reflect.Type) {
 		if err != nil {
+			typeToSignature.SetErr(t, err)
+		} else if len(sig.str) > 255 {
+			sig = Signature{}
+			err = typeErr(t, "type signature is too long")
 			typeToSignature.SetErr(t, err)
 		} else {
 			typeToSignature.Set(t, sig)

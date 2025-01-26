@@ -487,6 +487,8 @@ func TestMarshalUnmarshal(t *testing.T) {
 			0, 42,
 			// .B
 			5),
+		fail("any of excessively large struct",
+			ptr(any(Large{}))),
 	}
 
 	for _, tc := range tests {
@@ -609,5 +611,9 @@ func TestMarshalInvalid(t *testing.T) {
 	var nonp uint16
 	if err := dec.Value(context.Background(), nonp); err == nil {
 		t.Fatal("decode nilptr succeeded, want error")
+	}
+
+	if _, err := SignatureFor[Large](); err == nil {
+		t.Fatal("SignatureFor[Large]() succeeded, want error")
 	}
 }

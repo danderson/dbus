@@ -167,9 +167,6 @@ func (e *encoderGen) newObjectPathEncoder() fragments.EncoderFunc {
 func (e *encoderGen) newSignatureEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 		s := v.Interface().(Signature).String()
-		if len(s) > 255 {
-			return fmt.Errorf("signature exceeds maximum length of 255 bytes")
-		}
 		e.Signature(s)
 		return nil
 	}

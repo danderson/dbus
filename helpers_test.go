@@ -200,6 +200,30 @@ type InlineSingle struct {
 	A uint16
 }
 
+// Large is a struct whose type signature is too big for DBus.
+type Large struct {
+	A [][][][][][][][][][][][]string
+	B [][][][][][][][][][][][]string
+	C [][][][][][][][][][][][]string
+	D [][][][][][][][][][][][]string
+	E [][][][][][][][][][][][]string
+	F [][][][][][][][][][][][]string
+	G [][][][][][][][][][][][]string
+	H [][][][][][][][][][][][]string
+	I [][][][][][][][][][][][]string
+	J [][][][][][][][][][][][]string
+	K [][][][][][][][][][][][]string
+	L [][][][][][][][][][][][]string
+	M [][][][][][][][][][][][]string
+	N [][][][][][][][][][][][]string
+	O [][][][][][][][][][][][]string
+	P [][][][][][][][][][][][]string
+	Q [][][][][][][][][][][][]string
+	R [][][][][][][][][][][][]string
+	S [][][][][][][][][][][][]string
+	T [][][][][][][][][][][][]string
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }

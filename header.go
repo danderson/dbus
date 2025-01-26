@@ -3,7 +3,6 @@ package dbus
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/danderson/dbus/fragments"
 )
@@ -12,9 +11,10 @@ import (
 // DBus byte order mark into something that can be a struct field.
 type byteOrder bool
 
-var byteOrderSignature = mkSignature(reflect.TypeFor[uint8](), "y")
-
-func (*byteOrder) SignatureDBus() Signature { return byteOrderSignature }
+func (*byteOrder) SignatureDBus() Signature {
+	ret, _ := SignatureFor[uint8]()
+	return ret
+}
 
 func (*byteOrder) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
 	e.ByteOrderFlag()
