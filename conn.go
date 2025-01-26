@@ -23,7 +23,7 @@ import (
 
 // SystemBus connects to the system bus.
 func SystemBus(ctx context.Context) (*Conn, error) {
-	return newConn(ctx, "/run/dbus/system_bus_socket")
+	return Dial(ctx, "/run/dbus/system_bus_socket")
 }
 
 // SessionBus connects to the current user's session bus.
@@ -37,12 +37,18 @@ func SessionBus(ctx context.Context) (*Conn, error) {
 		if !ok {
 			continue
 		}
-		return newConn(ctx, addr)
+		return Dial(ctx, addr)
 	}
 	return nil, fmt.Errorf("could not find usable session bus address in DBUS_SESSION_BUS_ADDRESS value %q", path)
 }
 
-func newConn(ctx context.Context, path string) (*Conn, error) {
+// Dial connects to the bus using the Unix domain socket at the given
+// path.
+//
+// This is intended for connecting to testing busses during
+// development. Most users should use [SessionBus] or [SystemBus]
+// instead.
+func Dial(ctx context.Context, path string) (*Conn, error) {
 	t, err := transport.DialUnix(ctx, path)
 	if err != nil {
 		return nil, err
@@ -171,7 +177,7 @@ func (c *Conn) LocalName() string {
 
 // Peer returns a Peer for the given bus name.
 //
-// The returned value is a purely local handle. It does not indicate
+// The returned value is a local handle only. It does not indicate
 // that the requested peer exists, or that it is currently reachable.
 func (c *Conn) Peer(name string) Peer {
 	return Peer{
@@ -435,6 +441,7 @@ func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
 
 	emitter, _ := ContextEmitter(ctx)
 	emitter = emitter.Object().Interface(iface)
+	ctx = withContextEmitter(ctx, emitter)
 
 	// Decode the change map[string]any by hand, so that we can
 	// directly map each variant value to the correct property value

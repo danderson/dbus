@@ -39,7 +39,7 @@ func (o Object) Compare(other Object) int {
 
 // Interface returns a named interface on the object.
 //
-// The returned value is a purely local handle. It does not indicate
+// The returned value is a local handle only. It does not indicate
 // that the object supports the requested interface.
 func (o Object) Interface(name string) Interface {
 	return Interface{

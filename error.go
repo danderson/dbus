@@ -5,8 +5,8 @@ import (
 	"reflect"
 )
 
-// TypeError is the error returned when a type cannot be translated to
-// the DBus wire format.
+// TypeError is the error returned when a type cannot be represented
+// in the DBus wire format.
 type TypeError struct {
 	// Type is the name of the type that caused the error.
 	Type string

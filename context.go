@@ -30,15 +30,20 @@ func withContextHeader(ctx context.Context, conn *Conn, hdr *header) context.Con
 	return ctx
 }
 
+func withContextEmitter(ctx context.Context, emitter Interface) context.Context {
+	return context.WithValue(ctx, emitterContextKey{}, emitter)
+}
+
 // emitterContextKey is the context key that carries the emitter of a
 // DBus signal.
 type emitterContextKey struct{}
 
-// ContextEmitter returns the emitter value from ctx, and reports
-// whether an emitter was found.
+// ContextEmitter returns the notification's emitter value from ctx,
+// and reports whether an emitter was found.
 //
-// Emitter information is available in [Unmarshaler]'s UnmarshalDBus
-// method, when decoding a signal type.
+// Emitter information is only available in the context of
+// [Unmarshaler]'s UnmarshalDBus method, when unmarshaling a signal or
+// property change type.
 func ContextEmitter(ctx context.Context) (Interface, bool) {
 	return getCtx[Interface](ctx, emitterContextKey{})
 }
@@ -50,9 +55,8 @@ type senderContextKey struct{}
 // ContextSender returns the sender found in ctx, and reports whether
 // a sender was found.
 //
-// Sender information is available in [Unmarshaler]'s UnmarshalDBus
-// method when decoding method arguments and signal types, and in
-// method handlers when handling incoming method calls.
+// Sender information is available in the context of [Unmarshaler]'s
+// UnmarshalDBus method.
 func ContextSender(ctx context.Context) (Peer, bool) {
 	return getCtx[Peer](ctx, senderContextKey{})
 }
@@ -64,8 +68,10 @@ type destContextKey struct{}
 // ContextDestination returns the destination found in ctx, and
 // reports whether a destination was found.
 //
-// Destination information is available in [Marshaler]'s MarshalDBus
-// method when encoding method return values.
+// Destination information is available in the context of
+// [Marshaler]'s MarshalDBus method when sending method calls, and in
+// the context of [Unmarshaler]'s UnmarshalDBus method when receiving
+// method calls.
 func ContextDestination(ctx context.Context) (Peer, bool) {
 	return getCtx[Peer](ctx, destContextKey{})
 }

@@ -47,7 +47,7 @@ func (p Peer) Compare(other Peer) int {
 
 // Object returns a named object on the peer.
 //
-// The returned value is a purely local handle. It does not indicate
+// The returned value is a local handle only. It does not indicate
 // that the peer is providing an object at the requested path.
 func (p Peer) Object(path ObjectPath) Object {
 	return Object{
