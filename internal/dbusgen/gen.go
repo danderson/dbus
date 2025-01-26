@@ -182,10 +182,6 @@ func argName(n int, arg dbus.ArgumentDescription) string {
 	return name
 }
 
-func arg(n int, arg dbus.ArgumentDescription) string {
-	return fmt.Sprintf("%s %s", argName(n, arg), arg.Type.Type())
-}
-
 func identifier(s string) string {
 	if i := strings.LastIndexByte(s, '.'); i >= 0 {
 		s = s[i+1:]

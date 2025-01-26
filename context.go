@@ -92,7 +92,7 @@ func contextFile(ctx context.Context, idx uint32) *os.File {
 	if !ok {
 		return nil
 	}
-	if idx < 0 || int(idx) >= len(*fs) {
+	if int(idx) >= len(*fs) {
 		return nil
 	}
 

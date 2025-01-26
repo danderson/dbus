@@ -125,7 +125,7 @@ func (d *Decoder) Uint64() (uint64, error) {
 // [Decoder.Mapper]. v must be a non-nil pointer.
 func (d *Decoder) Value(ctx context.Context, v any) error {
 	if d.Mapper == nil {
-		return errors.New("Mapper not provided to Decoder")
+		return errors.New("mapper func not provided to Decoder")
 	}
 	rv := reflect.ValueOf(v)
 	if !rv.IsValid() {

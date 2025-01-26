@@ -355,7 +355,7 @@ func runPing(env *command.Env, peer string) error {
 	defer conn.Close()
 
 	if err := conn.Peer(peer).Ping(env.Context()); err != nil {
-		return fmt.Errorf("Pinging %s: %w", peer, err)
+		return fmt.Errorf("pinging %s: %w", peer, err)
 	}
 
 	return nil
@@ -370,7 +370,7 @@ func runWhois(env *command.Env, peer string) error {
 
 	creds, err := conn.Peer(peer).Identity(env.Context())
 	if err != nil {
-		return fmt.Errorf("Getting credentials of %s: %w", peer, err)
+		return fmt.Errorf("getting credentials of %s: %w", peer, err)
 	}
 
 	if creds.PID != nil {

@@ -36,7 +36,6 @@ func (e *Encoder) Pad(align int) {
 	}
 	var pad [8]byte
 	e.Out = append(e.Out, pad[:align-extra]...)
-	return
 }
 
 // Write writes bs as-is to the output. It is the caller's
@@ -87,7 +86,7 @@ func (e *Encoder) Uint64(u64 uint64) {
 // the encoder's Mapper.
 func (e *Encoder) Value(ctx context.Context, v any) error {
 	if e.Mapper == nil {
-		return errors.New("Mapper not provided to Encoder")
+		return errors.New("mapper func not provided to Encoder")
 	}
 	fn, err := e.Mapper(reflect.TypeOf(v))
 	if err != nil {

@@ -50,7 +50,7 @@ func (i *indenter) Write(bs []byte) (int, error) {
 			i.indentNext = true
 			wr, bs = bs[:idx+1], bs[idx+1:]
 		} else {
-			wr, bs = wr, nil
+			bs = nil
 		}
 
 		n, err := os.Stdout.Write(wr)

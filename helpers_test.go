@@ -117,6 +117,7 @@ func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, d *fragments.Decode
 	if bs[0] != 0 {
 		return fmt.Errorf("unexpected non-zero first bytes %x", bs[0])
 	}
+	//lint:ignore SA4005 this type is deliberately broken, to check that the unmarshaler flags it.
 	s.B = bs[1] - 1
 	return nil
 }

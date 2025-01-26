@@ -154,18 +154,15 @@ func (u *unixTransport) auth() error {
 		return err
 	}
 
-	for {
-		resp, err := u.buf.ReadString('\n')
-		if err != nil {
-			return err
-		}
-		if strings.HasPrefix(resp, "OK ") {
-			break
-		}
+	resp, err := u.buf.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(resp, "OK ") {
 		return fmt.Errorf("AUTH EXTERNAL failed, server said %q", strings.TrimSpace(resp))
 	}
 
-	resp, err := u.buf.ReadString('\n')
+	resp, err = u.buf.ReadString('\n')
 	if err != nil {
 		return err
 	}

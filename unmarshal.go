@@ -199,6 +199,9 @@ func (d *decoderGen) newSignatureDecoder() fragments.DecoderFunc {
 			return err
 		}
 		bs, err := d.Read(int(u8) + 1)
+		if err != nil {
+			return err
+		}
 		sig, err := ParseSignature(string(bs[:len(bs)-1]))
 		if err != nil {
 			return err

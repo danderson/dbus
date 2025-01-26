@@ -120,7 +120,6 @@ func (im interfaceMember) String() string {
 
 type pendingCall struct {
 	notify chan struct{}
-	iface  Interface
 	resp   any
 	err    error
 }
@@ -191,7 +190,7 @@ func (c *Conn) writeMsg(ctx context.Context, hdr *header, body any) error {
 		bodyCtx := withContextHeader(ctx, c, hdr)
 		bodyCtx = withContextFiles(bodyCtx, &files)
 		c.enc.Out = c.encBody
-		if err := c.enc.Value(ctx, body); err != nil {
+		if err := c.enc.Value(bodyCtx, body); err != nil {
 			return err
 		}
 		sig, err := SignatureOf(body)
