@@ -34,6 +34,7 @@ func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
 		return nil, err
 	}
 
+	ret.send(false)
 	if err := ret.Request(opts); err != nil {
 		ret.w.Close()
 		return nil, err

@@ -60,7 +60,7 @@ func (c *Conn) BusID(ctx context.Context) (string, error) {
 // that the bus supports.
 func (c *Conn) Features(ctx context.Context) ([]string, error) {
 	var features []string
-	if err := c.bus.Interface(ifaceProps).GetProperty(ctx, "Features", &features); err != nil {
+	if err := c.bus.Interface(ifaceBus).GetProperty(ctx, "Features", &features); err != nil {
 		return nil, err
 	}
 	return features, nil
