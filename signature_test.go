@@ -33,7 +33,7 @@ func TestSignatureOf(t *testing.T) {
 		{Nested{}, "(y(nb))"},
 		{[]Nested{}, "a(y(nb))"},
 		{Embedded{}, "(nby)"},
-		{EmbeddedShadow{}, "(ny)"},
+		{EmbeddedShadow{}, "(nby)"},
 		{Arrays{}, "(asa(nb)aa(y(nb)))"},
 		{ptr(any(int16(0))), "v"},
 		{struct{ A any }{int16(0)}, "(v)"},

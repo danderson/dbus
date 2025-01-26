@@ -225,10 +225,14 @@ func TestMarshalUnmarshal(t *testing.T) {
 			// .D
 			66),
 
-		ok("struct embedded shadow", "(ny)",
+		ok("struct embedded shadow", "(nby)",
 			EmbeddedShadow{Simple{42, false}, 66},
 			// .Simple.A
 			0, 42,
+			// pad
+			0, 0,
+			// .Simple.B
+			0, 0, 0, 0,
 			// .B
 			66),
 

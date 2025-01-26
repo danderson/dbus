@@ -3,6 +3,7 @@ package dbus
 import (
 	"cmp"
 	"fmt"
+	"iter"
 	"reflect"
 	"slices"
 	"strconv"
@@ -166,8 +167,8 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 		varDictMap    *structField
 		varDictFields []*varDictField
 	)
-	for _, field := range reflect.VisibleFields(t) {
-		if field.Anonymous || !field.IsExported() {
+	for field := range structFields(t, nil) {
+		if !field.IsExported() {
 			continue
 		}
 
@@ -407,5 +408,34 @@ func alignAsStruct(t reflect.Type) bool {
 		return t.Elem().Kind() == reflect.Struct
 	} else {
 		return t.Kind() == reflect.Struct
+	}
+}
+
+func structFields(t reflect.Type, idx []int) iter.Seq[reflect.StructField] {
+	return func(yield func(reflect.StructField) bool) {
+		for i := range t.NumField() {
+			f := t.Field(i)
+			idx = append(idx, i)
+			if f.Anonymous {
+				at := f.Type
+				if at.Kind() == reflect.Pointer {
+					at = at.Elem()
+				}
+				if at.Kind() == reflect.Struct {
+					for af := range structFields(at, idx) {
+						if !yield(af) {
+							return
+						}
+					}
+					idx = idx[:len(idx)-1]
+					continue
+				}
+			}
+			f.Index = append([]int(nil), idx...)
+			if !yield(f) {
+				return
+			}
+			idx = idx[:len(idx)-1]
+		}
 	}
 }
