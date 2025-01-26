@@ -39,7 +39,7 @@ type App struct {
 
 	// Unknown collects any new application attributes that are not
 	// yet understood by this package.
-	Unknown map[string]dbus.Variant
+	Unknown map[string]any `dbus:"vardict"`
 }
 
 // BackgroundApps returns a list of Flatpak applications running in

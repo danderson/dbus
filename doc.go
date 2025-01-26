@@ -26,14 +26,14 @@ package dbus
 // pairs. The map's key underlying type must be uint{8,16,32,64},
 // int{16,32,64}, float64, bool, or string.
 //
-// Several DBus protocols use map[K]dbus.Variant values to extend
-// structs with new fields in a backwards compatible way. To support
-// this "vardict" idiom, structs may contain a single "vardict" field
-// and several "associated" fields:
+// Several DBus protocols use map[K]any values to extend structs with
+// new fields in a backwards compatible way. To support this "vardict"
+// idiom, structs may contain a single "vardict" field and several
+// "associated" fields:
 //
 //	struct Vardict{
 //	    // A "vardict" map for the struct.
-//	    M map[uint8]dbus.Variant `dbus:"vardict"`
+//	    M map[uint8]any `dbus:"vardict"`
 //
 //	    // "associated" fields. Associated fields can be declared
 //	    // anywhere in the struct, before or after the vardict field.
@@ -52,7 +52,7 @@ package dbus
 // [Signature], [ObjectPath], and [File] values encode to the
 // corresponding DBus types.
 //
-// [Variant] values encode as DBus variants. The Variant's inner value
+// 'any' values encode as DBus variants. The interface's inner value
 // must be a valid value according to these rules, or Marshal will
 // return a [TypeError].
 //
@@ -102,14 +102,14 @@ package dbus
 // message order. If the incoming dictionary contains duplicate values
 // for a key, all but the last value are discarded.
 //
-// Several DBus protocols use map[K]dbus.Variant values to extend
-// structs with new fields in a backwards compatible way. To support
-// this "vardict" idiom, structs may contain a single "vardict" field
-// and several "associated" fields:
+// Several DBus protocols use map[K]any values to extend structs with
+// new fields in a backwards compatible way. To support this "vardict"
+// idiom, structs may contain a single "vardict" field and several
+// "associated" fields:
 //
 //	struct Vardict{
 //	    // A "vardict" map for the struct.
-//	    M map[uint8]dbus.Variant `dbus:"vardict"`
+//	    M map[uint8]any `dbus:"vardict"`
 //
 //	    // "associated" fields. Associated fields can be declared
 //	    // anywhere in the struct, before or after the vardict field.
@@ -119,10 +119,9 @@ package dbus
 //
 // A vardict field decodes a DBus dictionary just like regular map,
 // except that if an incoming key matches an associated field's tag,
-// the corresponding value decodes into that associated field instead,
-// with the [Variant] envelope removed. If the associated field's type
-// is incompatible with the received map value, Unmarshal returns a
-// [TypeError].
+// the corresponding value decodes into that associated field
+// instead. If the associated field's type is incompatible with the
+// received map value, Unmarshal returns a [TypeError].
 //
 // Pointers decode as the value pointed to. Unmarshal allocates zero
 // values as needed when it encounters nil pointers.
@@ -130,8 +129,8 @@ package dbus
 // [Signature], [ObjectPath], and [File] decode the corresponding DBus
 // types.
 //
-// [Variant] values decode DBus variants. The type of the variant's
-// inner value is determined by the type signature carried in the
+// 'any' values decode DBus variants. The type of the variant's inner
+// value is determined by the type signature carried in the
 // message. Variants containing a struct are decoded into an anonymous
 // struct with fields named Field0, Field1, ..., FieldN in message
 // order.

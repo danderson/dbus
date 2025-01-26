@@ -34,8 +34,7 @@ func (f Interface) String() string {
 	return fmt.Sprintf("%s:%s", f.Object(), f.name)
 }
 
-// Compare compares two interfaces, with the same convention as
-// [cmp.Compare].
+// Compare compares two interfaces, with the same convention as [cmp.Compare].
 func (f Interface) Compare(other Interface) int {
 	if ret := f.Object().Compare(other.Object()); ret != 0 {
 		return ret
@@ -85,7 +84,7 @@ func (f Interface) GetProperty(ctx context.Context, name string, val any) error 
 		return errors.New("cannot read property into nil pointer")
 	}
 
-	var resp Variant
+	var resp any
 	req := struct {
 		InterfaceName string
 		PropertyName  string
@@ -95,7 +94,7 @@ func (f Interface) GetProperty(ctx context.Context, name string, val any) error 
 		return err
 	}
 
-	got := reflect.ValueOf(resp.Value)
+	got := reflect.ValueOf(resp)
 	if !got.Type().AssignableTo(want.Type().Elem()) {
 		return fmt.Errorf("property type %s is not assignable to %s", got.Type(), want.Type())
 	}
@@ -112,23 +111,18 @@ func (f Interface) SetProperty(ctx context.Context, name string, value any) erro
 	req := struct {
 		InterfaceName string
 		PropertyName  string
-		Value         Variant
-	}{f.name, name, Variant{value}}
+		Value         any
+	}{f.name, name, value}
 	return f.Object().Interface(ifaceProps).Call(ctx, "Set", req, nil)
 }
 
 // GetAllProperties returns all the properties exported by the
 // interface.
 func (f Interface) GetAllProperties(ctx context.Context) (map[string]any, error) {
-	var resp map[string]Variant
+	var resp map[string]any
 	err := f.Object().Interface(ifaceProps).Call(ctx, "GetAll", f.name, &resp)
 	if err != nil {
 		return nil, err
 	}
-
-	ret := make(map[string]any, len(resp))
-	for k, v := range resp {
-		ret[k] = v.Value
-	}
-	return ret, nil
+	return resp, nil
 }

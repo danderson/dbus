@@ -78,8 +78,8 @@ func (e *encoderGen) get(t reflect.Type) (ret fragments.EncoderFunc, err error) 
 		return e.newObjectPathEncoder(), nil
 	case reflect.TypeFor[Signature]():
 		return e.newSignatureEncoder(), nil
-	case reflect.TypeFor[Variant]():
-		return e.newVariantEncoder(), nil
+	case reflect.TypeFor[any]():
+		return e.newAnyEncoder(), nil
 	}
 
 	switch t.Kind() {
@@ -175,17 +175,20 @@ func (e *encoderGen) newSignatureEncoder() fragments.EncoderFunc {
 	}
 }
 
-func (e *encoderGen) newVariantEncoder() fragments.EncoderFunc {
+func (e *encoderGen) newAnyEncoder() fragments.EncoderFunc {
 	return func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
-		variant := v.Interface().(Variant)
-		sig, err := SignatureOf(variant.Value)
+		if v.IsNil() {
+			return errors.New("cannot marshal nil interface value")
+		}
+		inner := v.Elem()
+		sig, err := SignatureOf(inner.Interface())
 		if err != nil {
 			return err
 		}
 		if err := e.Value(ctx, sig); err != nil {
 			return err
 		}
-		if err := e.Value(ctx, variant.Value); err != nil {
+		if err := e.Value(ctx, inner.Interface()); err != nil {
 			return err
 		}
 		return nil
@@ -362,7 +365,7 @@ func (e *encoderGen) newVarDictFieldEncoder(f *structField) (fragments.EncoderFu
 	if err != nil {
 		return nil, err
 	}
-	vEnc, err := e.get(variantType)
+	vEnc, err := e.get(reflect.TypeFor[any]())
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +390,10 @@ func (e *encoderGen) newVarDictFieldEncoder(f *structField) (fragments.EncoderFu
 					if err := kEnc(ctx, e, f.Key); err != nil {
 						return err
 					}
-					if err := vEnc(ctx, e, reflect.ValueOf(Variant{fv.Interface()})); err != nil {
+					var a any
+					va := reflect.ValueOf(&a).Elem()
+					va.Set(fv)
+					if err := vEnc(ctx, e, va); err != nil {
 						return err
 					}
 					return nil

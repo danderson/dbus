@@ -102,7 +102,7 @@ type PeerIdentity struct {
 
 	// Unknown collects identity values provided by the bus that are
 	// not known to this library.
-	Unknown map[string]Variant `dbus:"vardict"`
+	Unknown map[string]any `dbus:"vardict"`
 }
 
 // Identity returns the peer's identity descriptor.

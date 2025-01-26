@@ -359,7 +359,7 @@ func (s *PropertiesChanged) SignatureDBus() Signature { return mustParseSignatur
 func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
 	var body struct {
 		Interface   string
-		Changed     map[string]Variant
+		Changed     map[string]any
 		Invalidated []string
 	}
 	if err := d.Value(ctx, &body); err != nil {
@@ -372,10 +372,7 @@ func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Deco
 	}
 
 	s.Interface = emitter.Object().Interface(body.Interface)
-	s.Changed = map[string]any{}
-	for k, v := range body.Changed {
-		s.Changed[k] = v.Value
-	}
+	s.Changed = body.Changed
 	s.Invalidated = mapset.New(body.Invalidated...)
 
 	return nil
@@ -400,7 +397,7 @@ func (s *InterfacesAdded) SignatureDBus() Signature { return mustParseSignature(
 func (s *InterfacesAdded) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
 	var body struct {
 		Path        ObjectPath
-		IfsAndProps map[string]map[string]Variant
+		IfsAndProps map[string]map[string]any
 	}
 	if err := d.Value(ctx, &body); err != nil {
 		return err

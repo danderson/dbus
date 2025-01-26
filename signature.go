@@ -262,7 +262,7 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 		return mkSignature(t, "g"), nil
 	case reflect.TypeFor[ObjectPath]():
 		return mkSignature(t, "o"), nil
-	case reflect.TypeFor[Variant]():
+	case reflect.TypeFor[any]():
 		return mkSignature(t, "v"), nil
 	}
 
@@ -279,11 +279,8 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 		return mkSignature(reflect.SliceOf(es.typ), "a"+es.str), nil
 	case reflect.Map:
 		k := t.Key()
-		if k == variantType {
-			// Would technically get caught by the struct-ness test
-			// below, but Variant is a common dbus thing and we should
-			// report a better error for it specifically.
-			return Signature{}, typeErr(t, "map keys cannot be Variants")
+		if k == reflect.TypeFor[any]() {
+			return Signature{}, typeErr(t, "map keys cannot be any")
 		}
 		switch k.Kind() {
 		case reflect.Slice:

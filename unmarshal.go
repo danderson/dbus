@@ -115,8 +115,8 @@ func (d *decoderGen) get(t reflect.Type) (ret fragments.DecoderFunc, err error) 
 		return d.newObjectPathDecoder(), nil
 	case reflect.TypeFor[Signature]():
 		return d.newSignatureDecoder(), nil
-	case reflect.TypeFor[Variant]():
-		return d.newVariantDecoder(), nil
+	case reflect.TypeFor[any]():
+		return d.newAnyDecoder(), nil
 	}
 
 	switch t.Kind() {
@@ -209,22 +209,25 @@ func (d *decoderGen) newSignatureDecoder() fragments.DecoderFunc {
 	}
 }
 
-func (d *decoderGen) newVariantDecoder() fragments.DecoderFunc {
+func (d *decoderGen) newAnyDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 		var sig Signature
 		if err := d.Value(ctx, &sig); err != nil {
-			return fmt.Errorf("reading Variant signature: %w", err)
+			return fmt.Errorf("reading variant signature: %w", err)
 		}
 		innerType := sig.Type()
 		if innerType == nil {
-			return fmt.Errorf("unsupported Variant type signature %q", sig)
+			return fmt.Errorf("unsupported variant type signature %q", sig)
 		}
 		inner := reflect.New(innerType)
 		if err := d.Value(ctx, inner.Interface()); err != nil {
-			return fmt.Errorf("reading Variant value (signature %q): %w", sig, err)
+			return fmt.Errorf("reading variant value (signature %q): %w", sig, err)
 		}
-		res := Variant{inner.Elem().Interface()}
-		v.Set(reflect.ValueOf(res))
+		if innerType.Kind() == reflect.Struct {
+			v.Set(inner)
+		} else {
+			v.Set(inner.Elem())
+		}
 		return nil
 	}
 }
@@ -464,7 +467,7 @@ func (d *decoderGen) newVarDictFieldDecoder(f *structField) (fragments.DecoderFu
 	if err != nil {
 		return nil, err
 	}
-	vDec, err := d.get(variantType)
+	vDec, err := d.get(reflect.TypeFor[any]())
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +483,7 @@ func (d *decoderGen) newVarDictFieldDecoder(f *structField) (fragments.DecoderFu
 		unknownInit := false
 
 		key := reflect.New(f.Type.Key())
-		val := reflect.New(variantType)
+		val := reflect.New(reflect.TypeFor[any]())
 
 		_, err := d.Array(true, func(i int) error {
 			key.Elem().SetZero()
@@ -511,12 +514,11 @@ func (d *decoderGen) newVarDictFieldDecoder(f *structField) (fragments.DecoderFu
 					}
 					fv = fv.Elem()
 				}
-				inner := val.Elem().Interface().(Variant).Value
-				innerVal := reflect.ValueOf(inner)
-				if fv.Type() != innerVal.Type() {
-					return fmt.Errorf("invalid type %s received for vardict field %s (%s)", innerVal.Type(), field.Name, fv.Type())
+				inner := val.Elem().Elem()
+				if fv.Type() != inner.Type() {
+					return fmt.Errorf("invalid type %s received for vardict field %s (%s)", inner.Type(), field.Name, fv.Type())
 				}
-				fv.Set(innerVal)
+				fv.Set(inner)
 			} else {
 				if !unknownInit {
 					unknownInit = true

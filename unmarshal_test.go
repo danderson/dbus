@@ -82,6 +82,17 @@ func TestUnmarshal(t *testing.T) {
 			ptr(Simple{42, true})),
 
 		ok([]byte{
+			// .A
+			0x00, 0x2a,
+			// Signature for uint32
+			0x01, 'u', 0x00,
+			// Pad
+			0x00, 0x00, 0x00,
+			// .B
+			0x00, 0x00, 0x00, 0x42},
+			ptr(WithAny{42, uint32(66)})),
+
+		ok([]byte{
 			0x42,
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // padding
 			0x00, 0x2a,
@@ -241,9 +252,9 @@ func TestUnmarshal(t *testing.T) {
 			0x00, 0x03, // val=3
 		}, ptr(VarDict{
 			D: 1,
-			Other: map[string]Variant{
-				"a": {uint8(2)},
-				"z": {uint16(3)},
+			Other: map[string]any{
+				"a": uint8(2),
+				"z": uint16(3),
 			},
 		})),
 

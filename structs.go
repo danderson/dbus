@@ -18,7 +18,7 @@ type structField struct {
 
 	// VarDictFields are the key-specific fields associated with this
 	// structField. This structField must be a vardict map
-	// (map[K]dbus.Variant).
+	// (map[K]any).
 	//
 	// VarDictFields is always of type map[K]*varDictField, but has to
 	// be a reflect.Value here because the vardict's key type is only
@@ -109,8 +109,7 @@ func (f *structField) String() string {
 
 // varDictField describes an "associated field" of a vardict. An
 // associated field stores the vardict value for a particular key with
-// strong typing, as opposed to the vardict's default dbus.Variant
-// values.
+// strong typing, as opposed to the vardict's default any values.
 type varDictField struct {
 	*structField
 	Key    reflect.Value
@@ -181,7 +180,7 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 
 		if isVardict {
 			if !isValidVarDictMapType(fieldInfo.Type) {
-				return nil, fmt.Errorf("vardict map %s.%s must be a map[K]dbus.Variant", ret.Name, fieldInfo.Name)
+				return nil, fmt.Errorf("vardict map %s.%s must be a map[K]any", ret.Name, fieldInfo.Name)
 			}
 			fieldInfo.VarDictFields = reflect.MakeMap(reflect.MapOf(
 				fieldInfo.Type.Key(),
@@ -208,7 +207,7 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 	// shape and parse out keys for later use.
 
 	if varDictMap == nil {
-		return nil, fmt.Errorf("vardict fields declared in struct %s, but no map[K]dbus.Variant tagged with 'vardict'", ret.Name)
+		return nil, fmt.Errorf("vardict fields declared in struct %s, but no map[K]any tagged with 'vardict'", ret.Name)
 	}
 
 	seen := map[string]*varDictField{}
@@ -262,9 +261,9 @@ func parseStructTag(field reflect.StructField) (encodeZero, isVardict bool, vard
 }
 
 // isValidVarDictMapType reports whether t is a valid vardict type,
-// i.e. a map[K]dbus.Variant where K is a valid dbus map key type.
+// i.e. a map[K]any where K is a valid dbus map key type.
 func isValidVarDictMapType(t reflect.Type) bool {
-	return t.Kind() == reflect.Map && mapKeyKinds.Has(t.Key().Kind()) && t.Elem() == variantType
+	return t.Kind() == reflect.Map && mapKeyKinds.Has(t.Key().Kind()) && t.Elem() == reflect.TypeFor[any]()
 }
 
 // mapKeyParser returns a function that converts strings into values

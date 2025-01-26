@@ -112,7 +112,7 @@ type header struct {
 
 	// Unknown collects unknown headers present in the
 	// message.
-	Unknown map[uint8]Variant `dbus:"vardict"`
+	Unknown map[uint8]any `dbus:"vardict"`
 
 	Align structAlign
 }

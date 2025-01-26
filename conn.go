@@ -437,7 +437,7 @@ func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
 	emitter, _ := ContextEmitter(ctx)
 	emitter = emitter.Object().Interface(iface)
 
-	// Decode the change map[string]Variant by hand, so that we can
+	// Decode the change map[string]any by hand, so that we can
 	// directly map each variant value to the correct property value
 	// directly.
 	_, err = body.Array(true, func(i int) error {

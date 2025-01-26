@@ -168,7 +168,7 @@ type VarDict struct {
 	C string `dbus:"key=@"`
 	D uint8  `dbus:"key=@"`
 
-	Other map[string]Variant `dbus:"vardict"`
+	Other map[string]any `dbus:"vardict"`
 }
 
 // VarDictByte is a struct that marshals to a DBus dict of byte to
@@ -177,7 +177,13 @@ type VarDictByte struct {
 	A uint16 `dbus:"key=1"`
 	B string `dbus:"key=2"`
 
-	Other map[byte]Variant `dbus:"vardict"`
+	Other map[byte]any `dbus:"vardict"`
+}
+
+// WithAny is a struct that contains an 'any' field.
+type WithAny struct {
+	A   uint16
+	Any any
 }
 
 func ptr[T any](v T) *T {

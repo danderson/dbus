@@ -35,7 +35,8 @@ func TestSignatureOf(t *testing.T) {
 		{Embedded{}, "(nby)"},
 		{EmbeddedShadow{}, "(ny)"},
 		{Arrays{}, "(asa(nb)aa(y(nb)))"},
-		{Variant{int16(0)}, "v"},
+		{ptr(any(int16(0))), "v"},
+		{struct{ A any }{int16(0)}, "(v)"},
 		{VarDict{}, "(a{sv})"},
 		{VarDictByte{}, "(a{yv})"},
 		{struct{}{}, "()"},
@@ -44,7 +45,7 @@ func TestSignatureOf(t *testing.T) {
 		{Tree{}, ""},
 		{map[Simple]bool{}, ""},
 		{map[[2]int64]bool{}, ""},
-		{map[Variant]bool{}, ""},
+		{map[any]bool{}, ""},
 		{func() int { return 2 }, ""},
 	}
 
@@ -143,7 +144,7 @@ func TestParseSignature(t *testing.T) {
 				}
 			}
 		}](), false},
-		{"v", reflect.TypeFor[Variant](), false},
+		{"v", reflect.TypeFor[any](), false},
 	}
 
 	for _, tc := range tests {

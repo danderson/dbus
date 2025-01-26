@@ -21,7 +21,7 @@ var (
 		't': reflect.TypeFor[uint64](),
 		'd': reflect.TypeFor[float64](),
 		's': reflect.TypeFor[string](),
-		'v': reflect.TypeFor[Variant](),
+		'v': reflect.TypeFor[any](),
 		'g': reflect.TypeFor[Signature](),
 		'o': reflect.TypeFor[ObjectPath](),
 		'h': reflect.TypeFor[*os.File](),
@@ -30,7 +30,7 @@ var (
 	// typeToStr maps basic DBus types that aren't basic Go types to
 	// their DBus type signature identifier.
 	typeToStr = map[reflect.Type]byte{
-		reflect.TypeFor[Variant]():    'v',
+		reflect.TypeFor[any]():        'v',
 		reflect.TypeFor[Signature]():  'g',
 		reflect.TypeFor[ObjectPath](): 'o',
 		reflect.TypeFor[*os.File]():   'h',

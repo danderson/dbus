@@ -90,7 +90,7 @@ func (o Object) Introspect(ctx context.Context) (*ObjectDescription, error) {
 // [org.freedesktop.DBus.ObjectManager]: https://dbus.freedesktop.org/doc/dbus-specification.html#standard-interfaces-objectmanager
 func (o Object) ManagedObjects(ctx context.Context) (map[Object][]Interface, error) {
 	// object path -> interface name -> map[property name]value
-	var resp map[ObjectPath]map[string]map[string]Variant
+	var resp map[ObjectPath]map[string]map[string]any
 	err := o.Interface(ifaceObjects).Call(ctx, "GetManagedObjects", nil, &resp)
 	if err != nil {
 		return nil, err
