@@ -12,6 +12,9 @@ import (
 // InlineLayout marks a struct as being inlined. A struct with a field
 // of type InlineLayout will be laid out in DBus messages without the
 // initial 8-byte alignment that DBus structs normally enforce.
+//
+// By convention, InlineLayout should be used as the type of a field
+// named "_", placed at the beginning of the struct type definition.
 type InlineLayout struct{}
 
 // structField is the information about a struct field that needs to
@@ -176,10 +179,11 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 		varDictFields []*varDictField
 	)
 	for field := range structFields(t, nil) {
+		if field.Type == reflect.TypeFor[InlineLayout]() {
+			ret.NoPad = true
+			continue
+		}
 		if !field.IsExported() {
-			if field.Type == reflect.TypeFor[InlineLayout]() {
-				ret.NoPad = true
-			}
 			continue
 		}
 
