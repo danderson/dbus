@@ -1,12 +1,5 @@
 Figure out an approach to fuzz Marshal/Unmarshal.
 
-skip struct padding for structs that are entirely vardict
-encoded. Currently can't write a struct that is a pure vardict and use
-it where dbus wants a dict, it'll get padded wrong.
-
-support encoding maps as either a{xy} or a(xy). Various dbus protocols
-use the latter for some reason.
-
 Export fragment mapper funcs for people doing custom encoding stuff.
 
 Revisit the documentation for context helpers. The wording doesn't
