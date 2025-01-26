@@ -459,8 +459,55 @@ func TestMarshalUnmarshal(t *testing.T) {
 			// .B.B
 			5),
 
+		ok("struct variant", "v",
+			Variant{A: 42, B: 5},
+			// signature (struct)
+			4, '(', 'q', 'y', ')', 0,
+			// pad
+			0, 0,
+			// .A
+			0, 42,
+			// .B
+			5),
+		ok("struct variant nested", "(yv)",
+			NestedVariant{A: 4, B: Variant{A: 42, B: 5}},
+			// .A
+			4,
+			// signature (struct)
+			4, '(', 'q', 'y', ')', 0,
+			// pad to struct
+			0,
+			// .B.A
+			0, 42,
+			// .B.B
+			5),
+
+		ok("struct inline variant", "v",
+			InlineVariant{A: 42},
+			// signature (uint16)
+			1, 'q', 0,
+			// pad
+			0,
+			// .A
+			0, 42),
+		ok("struct inline variant nested", "(yv)",
+			NestedInlineVariant{A: 4, B: InlineVariant{A: 42}},
+			// .A
+			4,
+			// signature (uint16)
+			1, 'q', 0,
+			// .B.A
+			0, 42),
+
 		fail("func",
 			func() int { return 2 }),
+		fail("struct inline variant multiple fields",
+			struct {
+				_ InlineLayout
+				_ VariantLayout
+				A byte
+				B byte
+			}{}),
 	}
 
 	for _, tc := range tests {

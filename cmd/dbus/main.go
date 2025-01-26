@@ -20,6 +20,7 @@ import (
 	"github.com/creachadair/mds/heapq"
 	"github.com/creachadair/mds/slice"
 	"github.com/danderson/dbus"
+	"github.com/danderson/dbus/freedesktop/background"
 	"github.com/danderson/dbus/internal/dbusgen"
 	"github.com/kr/pretty"
 )
@@ -160,6 +161,24 @@ generate peer interface`,
 				Run:      runGenerate,
 			},
 
+			{
+				Name:  "freedesktop",
+				Usage: "freedesktop args...",
+				Commands: []*command.C{
+					{
+						Name:  "background",
+						Usage: "background args...",
+						Commands: []*command.C{
+							{
+								Name:  "list",
+								Usage: "list",
+								Help:  "List flatpak apps that are running in the background",
+								Run:   command.Adapt(runFdoBackgroundList),
+							},
+						},
+					},
+				},
+			},
 			command.HelpCommand(nil),
 			command.VersionCommand(),
 		},
@@ -167,7 +186,7 @@ generate peer interface`,
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	env := root.NewEnv(nil).SetContext(ctx).MergeFlags(true)
+	env := root.NewEnv(nil).SetContext(ctx) //.MergeFlags(true)
 	command.RunOrFail(env, os.Args[1:])
 }
 
@@ -568,5 +587,28 @@ import (
 		return fmt.Errorf("generate interface %s: %w", desc.Name, err)
 	}
 	fmt.Printf("Wrote generated package to %s\n", generateArgs.OutFile)
+	return nil
+}
+
+func runFdoBackgroundList(env *command.Env) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(env.Context(), 5*time.Second)
+	defer cancel()
+
+	apps, err := background.New(conn).BackgroundApps(ctx)
+	if err != nil {
+		return fmt.Errorf("listing background apps: %w", err)
+	}
+	slices.SortFunc(apps, func(a, b background.App) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
+	for _, app := range apps {
+		fmt.Println(app.ID, app.Instance, app.Status)
+	}
 	return nil
 }

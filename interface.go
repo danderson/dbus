@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+
+	"github.com/danderson/dbus/fragments"
 )
 
 // Interface is a set of methods, properties and signals offered by an
@@ -84,22 +86,48 @@ func (f Interface) GetProperty(ctx context.Context, name string, val any) error 
 		return errors.New("cannot read property into nil pointer")
 	}
 
-	var resp any
 	req := struct {
 		InterfaceName string
 		PropertyName  string
 	}{f.name, name}
-	err := f.Object().Interface(ifaceProps).Call(ctx, "Get", req, &resp)
+	iface := f.Object().Interface(ifaceProps)
+
+	if want.Type().Elem() == reflect.TypeFor[any]() {
+		return iface.Call(ctx, "Get", req, val)
+	}
+
+	sig, err := signatureFor(want.Type(), nil)
 	if err != nil {
+		return fmt.Errorf("invalid property type %s: %w", want.Type(), err)
+	}
+	resp := propDecoder{
+		sig: sig,
+		out: val,
+	}
+	return iface.Call(ctx, "Get", req, &resp)
+}
+
+type propDecoder struct {
+	_   InlineLayout
+	sig Signature
+	out any
+}
+
+func (p *propDecoder) SignatureDBus() Signature { return p.sig }
+
+func (p *propDecoder) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
+	var sig Signature
+	if err := d.Value(ctx, &sig); err != nil {
 		return err
 	}
 
-	got := reflect.ValueOf(resp)
-	if !got.Type().AssignableTo(want.Type().Elem()) {
-		return fmt.Errorf("property type %s is not assignable to %s", got.Type(), want.Type())
+	if sig.String() != p.sig.String() {
+		return fmt.Errorf("property type %s is not assignable to %s", sig.Type(), p.sig.Type())
 	}
-	want.Elem().Set(got)
 
+	if err := d.Value(ctx, p.out); err != nil {
+		return err
+	}
 	return nil
 }
 

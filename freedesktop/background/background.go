@@ -17,7 +17,7 @@ type Monitor struct{ iface dbus.Interface }
 // New returns an interface to the Flatpak background applications
 // monitor.
 func New(conn *dbus.Conn) Monitor {
-	obj := conn.Peer("org.freedesktop.background.Monitor").Object("/org/freedesktop/background/Monitor")
+	obj := conn.Peer("org.freedesktop.background.Monitor").Object("/org/freedesktop/background/monitor")
 	return Interface(obj)
 }
 
@@ -30,6 +30,8 @@ func Interface(obj dbus.Object) Monitor {
 
 // App is a Flatpak application running in the background.
 type App struct {
+	_ dbus.InlineLayout
+
 	// ID is the application's Flatpak ID.
 	ID string `dbus:"key=app_id"`
 	// Instance is the application instance's ID.
