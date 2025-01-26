@@ -315,7 +315,11 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 			}
 			s = append(s, fieldSig.str)
 		}
-		return mkSignature(t, "("+strings.Join(s, "")+")"), nil
+		if fs.NoPad {
+			return mkSignature(t, strings.Join(s, "")), nil
+		} else {
+			return mkSignature(t, "("+strings.Join(s, "")+")"), nil
+		}
 	}
 
 	return Signature{}, typeErr(t, "no mapping available")

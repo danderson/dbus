@@ -274,8 +274,6 @@ type NameOwnerChanged struct {
 	New *Peer
 }
 
-func (s *NameOwnerChanged) IsDBusStruct() bool { return true }
-
 func (s *NameOwnerChanged) SignatureDBus() Signature { return mustParseSignature("sss") }
 
 func (s *NameOwnerChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
@@ -352,8 +350,6 @@ type PropertiesChanged struct {
 	Invalidated mapset.Set[string]
 }
 
-func (s *PropertiesChanged) IsDBusStruct() bool { return true }
-
 func (s *PropertiesChanged) SignatureDBus() Signature { return mustParseSignature("sa{sv}as") }
 
 func (s *PropertiesChanged) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error {
@@ -389,8 +385,6 @@ type InterfacesAdded struct {
 	Object     Object
 	Interfaces []Interface
 }
-
-func (s *InterfacesAdded) IsDBusStruct() bool { return true }
 
 func (s *InterfacesAdded) SignatureDBus() Signature { return mustParseSignature("oa{sa{sv}}") }
 
@@ -429,8 +423,6 @@ type InterfacesRemoved struct {
 	Object     Object
 	Interfaces []Interface
 }
-
-func (s *InterfacesRemoved) IsDBusStruct() bool { return true }
 
 func (s *InterfacesRemoved) SignatureDBus() Signature { return mustParseSignature("oa{sa{sv}}") }
 

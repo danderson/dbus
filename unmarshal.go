@@ -15,8 +15,8 @@ import (
 // Unmarshaler is the interface implemented by types that can
 // unmarshal themselves.
 //
-// SignatureDBus and IsDBusStruct are invoked on zero values of the
-// Unmarshaler, and must return constant values.
+// SignatureDBus is invoked on a zero value of the Unmarshaler, and
+// must return a constant.
 //
 // UnmarshalDBus must have a pointer receiver. If Unmarshal encounters
 // an Unmarshaler whose UnmarshalDBus method takes a value receiver,
@@ -24,10 +24,9 @@ import (
 //
 // UnmarshalDBus is responsible for consuming padding appropriate to
 // the values being encoded, and for consuming input in a way that
-// agrees with the values of SignatureDBus and IsDBusStruct.
+// agrees with the output of SignatureDBus.
 type Unmarshaler interface {
 	SignatureDBus() Signature
-	IsDBusStruct() bool
 	UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error
 }
 
@@ -36,8 +35,8 @@ var unmarshalerType = reflect.TypeFor[Unmarshaler]()
 // unmarshalerOnly is the unmarshal method of Unmarshaler by itself.
 //
 // It is used to enforce that the unmarshal function is implemented
-// with a pointer receiver, without requiring that SignatureDBus and
-// IsDBusStruct also have a pointer receiver.
+// with a pointer receiver, without requiring SignatureDBus to also
+// have a pointer receiver.
 type unmarshalerOnly interface {
 	UnmarshalDBus(ctx context.Context, d *fragments.Decoder) error
 }
@@ -429,15 +428,27 @@ func (d *decoderGen) newStructDecoder(t reflect.Type) (fragments.DecoderFunc, er
 		frags = append(frags, fDec)
 	}
 
-	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-		return d.Struct(func() error {
+	var fn fragments.DecoderFunc
+	if fs.NoPad {
+		fn = func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
 			for _, frag := range frags {
 				if err := frag(ctx, d, v); err != nil {
 					return err
 				}
 			}
 			return nil
-		})
+		}
+	} else {
+		fn = func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			return d.Struct(func() error {
+				for _, frag := range frags {
+					if err := frag(ctx, d, v); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
 	}
 	return fn, nil
 }

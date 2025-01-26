@@ -444,6 +444,21 @@ func TestMarshalUnmarshal(t *testing.T) {
 			// val="foo"
 			0, 0, 0, 3, 'f', 'o', 'o', 0),
 
+		ok("struct inline", "qy",
+			Inline{A: 42, B: 5},
+			0, 42,
+			5),
+		ok("struct inline nested", "(yqy)",
+			NestedInline{A: 4, B: Inline{A: 42, B: 5}},
+			// .A
+			4,
+			// pad, but only to uint16, not struct
+			0,
+			// .B.A
+			0, 42,
+			// .B.B
+			5),
+
 		fail("func",
 			func() int { return 2 }),
 	}

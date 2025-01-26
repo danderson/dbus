@@ -15,15 +15,14 @@ import (
 // Marshaler is the interface implemented by types that can marshal
 // themselves to the DBus wire format.
 //
-// SignatureDBus and IsDBusStruct are invoked on zero values of the
-// Marshaler, and must return constant values.
+// SignatureDBus is invoked on a zero value of the Marshaler, and must
+// return a constant.
 //
 // MarshalDBus is responsible for inserting padding appropriate to the
 // values being encoded, and for producing output that matches the
-// structure declared by SignatureDBus and IsDBusStruct.
+// structure declared by SignatureDBus.
 type Marshaler interface {
 	SignatureDBus() Signature
-	IsDBusStruct() bool
 	MarshalDBus(ctx context.Context, e *fragments.Encoder) error
 }
 
@@ -329,16 +328,27 @@ func (e *encoderGen) newStructEncoder(t reflect.Type) (fragments.EncoderFunc, er
 		frags = append(frags, fEnc)
 	}
 
-	fn := func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
-		e.Struct(func() error {
+	var fn fragments.EncoderFunc
+	if fs.NoPad {
+		fn = func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
 			for _, frag := range frags {
 				if err := frag(ctx, e, v); err != nil {
 					return err
 				}
 			}
 			return nil
-		})
-		return nil
+		}
+	} else {
+		fn = func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+			return e.Struct(func() error {
+				for _, frag := range frags {
+					if err := frag(ctx, e, v); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
 	}
 	return fn, nil
 }

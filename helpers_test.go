@@ -121,8 +121,6 @@ func (s SelfMarshalerVal) UnmarshalDBus(ctx context.Context, d *fragments.Decode
 	return nil
 }
 
-func (s SelfMarshalerVal) IsDBusStruct() bool { return false }
-
 func (s SelfMarshalerVal) SignatureDBus() Signature {
 	return mustSignatureFor[uint16]()
 }
@@ -154,8 +152,6 @@ func (s *SelfMarshalerPtr) UnmarshalDBus(ctx context.Context, d *fragments.Decod
 	return nil
 }
 
-func (s *SelfMarshalerPtr) IsDBusStruct() bool { return false }
-
 func (s *SelfMarshalerPtr) SignatureDBus() Signature {
 	return mustSignatureFor[uint16]()
 }
@@ -184,6 +180,18 @@ type VarDictByte struct {
 type WithAny struct {
 	A   uint16
 	Any any
+}
+
+type Inline struct {
+	_ InlineLayout
+
+	A uint16
+	B byte
+}
+
+type NestedInline struct {
+	A byte
+	B Inline
 }
 
 func ptr[T any](v T) *T {

@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+// InlineLayout marks a struct as being inlined. A struct with a field
+// of type InlineLayout will be laid out in DBus messages without the
+// initial 8-byte alignment that DBus structs normally enforce.
+type InlineLayout struct{}
+
 // structField is the information about a struct field that needs to
 // be marshaled/unmarshaled.
 type structField struct {
@@ -128,6 +133,10 @@ type structInfo struct {
 	Name string
 	// Type is the struct's type, for use in diagnostics.
 	Type reflect.Type
+	// NoPad, if true, specifies that the struct should be aligned
+	// according to the alignment of its first encoded field, instead
+	// of the customary 8-byte alignment.
+	NoPad bool
 
 	// StructFields is the information about each struct field
 	// eligible for DBus encoding/decoding.
@@ -169,6 +178,9 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 	)
 	for field := range structFields(t, nil) {
 		if !field.IsExported() {
+			if field.Type == reflect.TypeFor[InlineLayout]() {
+				ret.NoPad = true
+			}
 			continue
 		}
 
@@ -374,41 +386,18 @@ func allocSteps(t reflect.Type, idx []int) [][]int {
 	return ret
 }
 
-// A structer reports its own DBus structness, overriding the opinion
-// of reflect.Type.Kind().
-type structer interface {
-	IsDBusStruct() bool
-}
-
-var structerType = reflect.TypeFor[structer]()
-
 // alignAsStruct reports whether t aligns like a DBus struct, i.e. to
 // 8 byte boundaries.
 func alignAsStruct(t reflect.Type) bool {
-	// Deref *****Thing down to just *Thing.
-	for t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Pointer {
-		t = t.Elem()
+	t, _ = derefType(t)
+	if t.Kind() != reflect.Struct {
+		return false
 	}
-	// Only obey IsDBusStruct() if the type implements a full
-	// marshaler or unmarshaler, a single looseleaf IsDBusStruct
-	// doesn't count.
-	if t.Implements(marshalerType) || t.Implements(unmarshalerType) {
-		if t.Kind() == reflect.Pointer && t.Elem().Implements(structerType) {
-			// structer is implemented with a value receiver, so we
-			// have to alloc a zero value to query it.
-			return reflect.Zero(t.Elem()).Interface().(structer).IsDBusStruct()
-		} else {
-			return reflect.Zero(t).Interface().(structer).IsDBusStruct()
-		}
+	fs, err := getStructInfo(t)
+	if err != nil {
+		panic(err)
 	}
-
-	// If the type isn't a Marshaler/Unmarshaler, structness is
-	// determined by... well, by being a struct.
-	if t.Kind() == reflect.Pointer {
-		return t.Elem().Kind() == reflect.Struct
-	} else {
-		return t.Kind() == reflect.Struct
-	}
+	return !fs.NoPad
 }
 
 func structFields(t reflect.Type, idx []int) iter.Seq[reflect.StructField] {

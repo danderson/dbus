@@ -12,8 +12,6 @@ import (
 // DBus byte order mark into something that can be a struct field.
 type byteOrder bool
 
-func (*byteOrder) IsDBusStruct() bool { return false }
-
 var byteOrderSignature = mkSignature(reflect.TypeFor[uint8](), "y")
 
 func (*byteOrder) SignatureDBus() Signature { return byteOrderSignature }
@@ -51,7 +49,6 @@ const (
 // is specified to contain trailing padding prior to the message body.
 type structAlign struct{}
 
-func (*structAlign) IsDBusStruct() bool       { return true }
 func (*structAlign) SignatureDBus() Signature { return Signature{} }
 
 func (*structAlign) MarshalDBus(_ context.Context, e *fragments.Encoder) error {
