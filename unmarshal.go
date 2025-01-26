@@ -423,24 +423,6 @@ func (d *decoderGen) newStructDecoder(t reflect.Type) (fragments.DecoderFunc, er
 	}
 
 	var frags []fragments.DecoderFunc
-	if fs.WrapVariant {
-		want := fs.Signature()
-		frags = append(frags, func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-			got, err := d.Signature()
-			if err != nil {
-				return err
-			}
-			if got != want {
-				return fmt.Errorf("wrong type signature %q for %s, want %q", got, t, want)
-			}
-			return nil
-		})
-	}
-	if !fs.NoPad {
-		frags = append(frags, func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-			return d.Pad(8)
-		})
-	}
 	for _, f := range fs.StructFields {
 		fDec, err := d.newStructFieldDecoder(f)
 		if err != nil {
@@ -449,13 +431,27 @@ func (d *decoderGen) newStructDecoder(t reflect.Type) (fragments.DecoderFunc, er
 		frags = append(frags, fDec)
 	}
 
-	fn := func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-		for _, frag := range frags {
-			if err := frag(ctx, d, v); err != nil {
-				return err
+	var fn fragments.DecoderFunc
+	if fs.NoPad {
+		fn = func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			for _, frag := range frags {
+				if err := frag(ctx, d, v); err != nil {
+					return err
+				}
 			}
+			return nil
 		}
-		return nil
+	} else {
+		fn = func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
+			return d.Struct(func() error {
+				for _, frag := range frags {
+					if err := frag(ctx, d, v); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
 	}
 	return fn, nil
 }

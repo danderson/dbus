@@ -195,29 +195,6 @@ type NestedInline struct {
 	B Inline
 }
 
-type Variant struct {
-	_ VariantLayout
-	A uint16
-	B byte
-}
-
-type NestedVariant struct {
-	A byte
-	B Variant
-}
-
-type InlineVariant struct {
-	_ InlineLayout
-	_ VariantLayout
-
-	A uint16
-}
-
-type NestedInlineVariant struct {
-	A byte
-	B InlineVariant
-}
-
 func ptr[T any](v T) *T {
 	return &v
 }

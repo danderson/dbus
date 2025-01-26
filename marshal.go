@@ -318,20 +318,6 @@ func (e *encoderGen) newStructEncoder(t reflect.Type) (fragments.EncoderFunc, er
 	}
 
 	var frags []fragments.EncoderFunc
-
-	if fs.WrapVariant {
-		sig := fs.Signature()
-		frags = append(frags, func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
-			e.Signature(sig)
-			return nil
-		})
-	}
-	if !fs.NoPad {
-		frags = append(frags, func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
-			e.Pad(8)
-			return nil
-		})
-	}
 	for _, f := range fs.StructFields {
 		fEnc, err := e.newStructFieldEncoder(f)
 		if err != nil {
@@ -340,13 +326,27 @@ func (e *encoderGen) newStructEncoder(t reflect.Type) (fragments.EncoderFunc, er
 		frags = append(frags, fEnc)
 	}
 
-	fn := func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
-		for _, frag := range frags {
-			if err := frag(ctx, e, v); err != nil {
-				return err
+	var fn fragments.EncoderFunc
+	if fs.NoPad {
+		fn = func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+			for _, frag := range frags {
+				if err := frag(ctx, e, v); err != nil {
+					return err
+				}
 			}
+			return nil
 		}
-		return nil
+	} else {
+		fn = func(ctx context.Context, e *fragments.Encoder, v reflect.Value) error {
+			return e.Struct(func() error {
+				for _, frag := range frags {
+					if err := frag(ctx, e, v); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
 	}
 	return fn, nil
 }

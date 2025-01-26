@@ -15,24 +15,7 @@ import (
 //
 // By convention, InlineLayout should be used as the type of a field
 // named "_", placed at the beginning of the struct type definition.
-//
-// InlineLayout can be combined with [VariantLayout], as long as the
-// struct contains a single exported field. A single vardict and its
-// associated fields count as a single field.
 type InlineLayout struct{}
-
-// VariantLayout marks a struct as being a variant value. A struct
-// with a field of type VariantLayout will be laid out in DBus
-// messages wrapped in a variant envelope, as if the value being
-// encoded were a *any containing the struct.
-//
-// By convention, Variant should be used as the type of a field
-// named "_", placed at the beginning of the struct type definition.
-//
-// VariantLayout can be combined with [InlineLayout], as long as the
-// struct contains a single exported field. A single vardict and its
-// associated fields count as a single field.
-type VariantLayout struct{}
 
 // structField is the information about a struct field that needs to
 // be marshaled/unmarshaled.
@@ -172,9 +155,6 @@ type structInfo struct {
 	// according to the alignment of its first encoded field, instead
 	// of the customary 8-byte alignment.
 	NoPad bool
-	// WrapVariant, if true, specifies that the struct should be
-	// wrapped in a DBus variant.
-	WrapVariant bool
 
 	// StructFields is the information about each struct field
 	// eligible for DBus encoding/decoding.
@@ -233,12 +213,8 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 		varDictFields []*varDictField
 	)
 	for field := range structFields(t, nil) {
-		switch field.Type {
-		case reflect.TypeFor[InlineLayout]():
+		if field.Type == reflect.TypeFor[InlineLayout]() {
 			ret.NoPad = true
-			continue
-		case reflect.TypeFor[VariantLayout]():
-			ret.WrapVariant = true
 			continue
 		}
 		if !field.IsExported() {
@@ -272,16 +248,13 @@ func getStructInfo(t reflect.Type) (*structInfo, error) {
 		}
 	}
 
-	if ret.NoPad && ret.WrapVariant && len(ret.StructFields) > 1 {
-		return nil, fmt.Errorf("invalid struct %s: structs with InlineLayout and VariantLayout can only have 1 field", t)
-	}
 	if len(varDictFields) == 0 {
 		// Simple struct, all done.
 		return ret, nil
 	}
 
-	// Struct containing vardict fields. Vardict struct. Validate its
-	// shape and parse out keys for later use.
+	// Struct containing vardict fields. Validate its shape and parse
+	// out keys for later use.
 
 	if varDictMap == nil {
 		return nil, fmt.Errorf("vardict fields declared in struct %s, but no map[K]any tagged with 'vardict'", ret.Name)

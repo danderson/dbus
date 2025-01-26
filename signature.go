@@ -295,9 +295,6 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 		if err != nil {
 			return Signature{}, typeErr(t, "getting struct info: %w", err)
 		}
-		if fs.WrapVariant {
-			return mkSignature(reflect.TypeFor[any](), "v"), nil
-		}
 		var s []string
 		for _, f := range fs.StructFields {
 			// Descend through all fields, to look for cyclic
