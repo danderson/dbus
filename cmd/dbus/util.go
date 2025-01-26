@@ -67,6 +67,11 @@ func (i *indenter) indent(n int) {
 }
 
 func listPeers(ctx context.Context, conn *dbus.Conn, peerFilter string) iter.Seq2[dbus.Peer, error] {
+	if peerFilter == "" {
+		// Unique bus connections fail to handle introspection
+		// gracefully more often than not.
+		peerFilter = `^[^:].*`
+	}
 	return func(yield func(dbus.Peer, error) bool) {
 		f, err := regexp.Compile(peerFilter)
 		if err != nil {
