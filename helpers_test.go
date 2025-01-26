@@ -47,11 +47,11 @@ type Tree struct {
 	Right *Tree
 }
 
-// NestedSelfMashalerVal is a struct with a field that implements
+// NestedSelfMarshalerVal is a struct with a field that implements
 // Marshaler/Unmarshaler using value method
-// receivers. NestedSelfMashalerVal cannot be unmarshaled, because
+// receivers. NestedSelfMarshalerVal cannot be unmarshaled, because
 // UnmarshalDBus must be implemented on a pointer receiver.
-type NestedSelfMashalerVal struct {
+type NestedSelfMarshalerVal struct {
 	A byte
 	B SelfMarshalerVal
 }
@@ -102,7 +102,7 @@ type SelfMarshalerVal struct {
 
 func (s SelfMarshalerVal) MarshalDBus(ctx context.Context, e *fragments.Encoder) error {
 	e.Pad(3)
-	e.Write([]byte{0, s.B + 1})
+	e.Write([]byte{s.B + 1, 0})
 	return nil
 }
 

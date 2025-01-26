@@ -514,7 +514,13 @@ func (d *decoderGen) newVarDictFieldDecoder(f *structField) (fragments.DecoderFu
 					}
 					fv = fv.Elem()
 				}
+				// *any(underlying) -> underlying
 				inner := val.Elem().Elem()
+				// the any decoder unmarshals structs as pointers, so
+				// need one more indirection.
+				if inner.Type().Kind() == reflect.Pointer {
+					inner = inner.Elem()
+				}
 				if fv.Type() != inner.Type() {
 					return fmt.Errorf("invalid type %s received for vardict field %s (%s)", inner.Type(), field.Name, fv.Type())
 				}

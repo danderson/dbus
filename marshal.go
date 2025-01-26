@@ -41,6 +41,9 @@ type encoderGen struct {
 }
 
 func (e *encoderGen) get(t reflect.Type) (ret fragments.EncoderFunc, err error) {
+	if t == nil {
+		return nil, fmt.Errorf("cannot encode nil interface")
+	}
 	if ret, err := encoders.Get(t); err == nil {
 		return ret, nil
 	} else if !errors.Is(err, errNotFound) {
