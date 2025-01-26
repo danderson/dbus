@@ -181,9 +181,12 @@ func (e *encoderGen) newAnyEncoder() fragments.EncoderFunc {
 			return errors.New("cannot marshal nil interface value")
 		}
 		inner := v.Elem()
-		sig, err := SignatureOf(inner.Interface())
+		sig, err := signatureFor(inner.Type(), nil)
 		if err != nil {
 			return err
+		}
+		if !sig.isSingleType() {
+			return fmt.Errorf("variant cannot contain multi-value type %s (signature %q)", inner.Type(), sig)
 		}
 		if err := e.Value(ctx, sig); err != nil {
 			return err

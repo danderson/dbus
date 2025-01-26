@@ -50,6 +50,17 @@ func (s Signature) IsZero() bool {
 	return s.typ == nil
 }
 
+func (s Signature) isSingleType() bool {
+	if s.typ == nil {
+		return false
+	}
+	_, rest, err := parseOne(s.String(), false)
+	if err != nil {
+		panic(err)
+	}
+	return rest == ""
+}
+
 // Type returns the reflect.Type the Signature represents.
 //
 // If [Signature.IsZero] is true, Type returns nil.
@@ -97,15 +108,21 @@ func ParseSignature(sig string) (Signature, error) {
 	case 1:
 		ret = mkSignature(parts[0], sig)
 	default:
-		fs := make([]reflect.StructField, len(parts))
+		fs := make([]reflect.StructField, len(parts)+1)
+		fs[0] = reflect.StructField{
+			Name:    "_",
+			PkgPath: "github.com/danderson/dbus",
+			Type:    reflect.TypeFor[InlineLayout](),
+		}
 		for i, f := range parts {
-			fs[i] = reflect.StructField{
-				Name: fmt.Sprintf("Field%d", i),
-				Type: f,
+			fs[i+1] = reflect.StructField{
+				Name:    fmt.Sprintf("Field%d", i),
+				PkgPath: "github.com/danderson/dbus",
+				Type:    f,
 			}
 		}
 		st := reflect.StructOf(fs)
-		ret = mkSignature(st, "("+sig+")")
+		ret = mkSignature(st, sig)
 		// Also add the adjusted struct signature to cache.
 		strToSignature.Set(ret.str, ret)
 	}

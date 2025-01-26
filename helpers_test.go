@@ -195,6 +195,11 @@ type NestedInline struct {
 	B Inline
 }
 
+type InlineSingle struct {
+	_ InlineLayout
+	A uint16
+}
+
 func ptr[T any](v T) *T {
 	return &v
 }

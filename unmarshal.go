@@ -209,13 +209,12 @@ func (d *decoderGen) newSignatureDecoder() fragments.DecoderFunc {
 
 func (d *decoderGen) newAnyDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-		s, err := d.Signature()
-		if err != nil {
+		var sig Signature
+		if err := d.Value(ctx, &sig); err != nil {
 			return err
 		}
-		sig, err := ParseSignature(s)
-		if err != nil {
-			return err
+		if !sig.isSingleType() {
+			return fmt.Errorf("invalid multi-value variant type signature %q", sig)
 		}
 		innerType := sig.Type()
 		if innerType == nil {

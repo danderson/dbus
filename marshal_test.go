@@ -459,8 +459,34 @@ func TestMarshalUnmarshal(t *testing.T) {
 			// .B.B
 			5),
 
+		ok("any", "v",
+			ptr(any(uint16(42))),
+			// signature (uint16)
+			1, 'q', 0,
+			// pad
+			0,
+			// val
+			0, 42),
+		asymmetric("any of inlined one field struct", "v",
+			ptr(any(uint16(42))),
+			ptr(any(InlineSingle{A: 42})),
+			// signature (uint16)
+			1, 'q', 0,
+			// pad
+			0,
+			// val
+			0, 42),
+
 		fail("func",
 			func() int { return 2 }),
+		fail("any of inlined multi field struct",
+			ptr(any(Inline{A: 42, B: 5})),
+			// signature (uint16 + byte, invalid for variant)
+			2, 'q', 'y', 0,
+			// .A
+			0, 42,
+			// .B
+			5),
 	}
 
 	for _, tc := range tests {
@@ -483,9 +509,8 @@ func TestMarshalUnmarshal(t *testing.T) {
 				if err := enc.Value(context.Background(), tc.toEncode); err == nil {
 					t.Fatalf("encode succeeded, wanted error\n  val: %#v\n  got: % x", tc.toEncode, enc.Out)
 				}
-				if sig, err := SignatureOf(tc.toEncode); err == nil {
-					t.Fatalf("SignatureOf succeeded, wanted error\n  val: %#v\n  sig: %s", tc.toEncode, sig)
-				}
+				// Can succeed or fail, but not panic.
+				SignatureOf(tc.toEncode)
 			} else {
 				if err := dec.Value(context.Background(), got); err != nil {
 					t.Fatalf("decode failed: %v\n  raw: % x\n  want: %#v", err, tc.raw, tc.wantDecode)
