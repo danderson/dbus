@@ -8,15 +8,23 @@ import (
 	"strings"
 )
 
+// ObjectDescription describes a DBus object's exported interfaces and
+// child objects.
+//
+// Interface and child descriptions are provided by the DBus peer
+// hosting the object, and may not accurately reflect the actual
+// exposed API or object structure.
 type ObjectDescription struct {
-	Name       string
+	// Interfaces maps an interface name to a description of its API.
 	Interfaces map[string]*InterfaceDescription
-	Children   []string
+	// Children is the relative paths to child objects under this
+	// object. The relative paths may contain multiple path
+	// components.
+	Children []string
 }
 
 func (o *ObjectDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var raw struct {
-		Name       string                  `xml:"name,attr"`
 		Interfaces []*InterfaceDescription `xml:"interface"`
 		Children   []struct {
 			Name string `xml:"name,attr"`
@@ -25,7 +33,6 @@ func (o *ObjectDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	if err := d.DecodeElement(&raw, &start); err != nil {
 		return err
 	}
-	o.Name = raw.Name
 	o.Interfaces = make(map[string]*InterfaceDescription, len(raw.Interfaces))
 	for _, iface := range raw.Interfaces {
 		o.Interfaces[iface.Name] = iface
@@ -37,6 +44,10 @@ func (o *ObjectDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	return nil
 }
 
+// InterfaceDescription describes a DBus interface.
+//
+// Interface descriptions are provided by the DBus peer offering the
+// interface, and may not accurately reflect the actual exposed API.
 type InterfaceDescription struct {
 	Name       string                 `xml:"name,attr"`
 	Methods    []*MethodDescription   `xml:"method"`
@@ -52,61 +63,74 @@ func (d InterfaceDescription) String() string {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, m := range methods {
-		fmt.Fprintf(&ret, "  func %s\n", m)
+		fmt.Fprintf(&ret, "  %s\n", m)
 	}
 
 	signals := slices.SortedFunc(slices.Values(d.Signals), func(a, b *SignalDescription) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, s := range signals {
-		fmt.Fprintf(&ret, "  signal %s\n", s)
+		fmt.Fprintf(&ret, "  %s\n", s)
 	}
 
 	props := slices.SortedFunc(slices.Values(d.Properties), func(a, b *PropertyDescription) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	for _, s := range props {
-		fmt.Fprintf(&ret, "  var %s\n", s)
+		fmt.Fprintf(&ret, "  %s\n", s)
 	}
 	ret.WriteString("}")
 	return ret.String()
 }
 
+// MethodDescription describes a DBus method.
+//
+// Method descriptions are provided by the DBus peer offering the
+// method, and may not accurately reflect the actual exposed API.
 type MethodDescription struct {
-	Name       string
-	In         []ArgumentDescription
-	Out        []ArgumentDescription
+	Name string
+	In   []ArgumentDescription
+	Out  []ArgumentDescription
+	// Deprecated, if true, indicates that the method should be
+	// avoided in new code.
 	Deprecated bool
-	NoReply    bool
+	// If true, NoReply indicates that the caller is expected to use
+	// Interface.OneWay to invoke this method, not Interface.Call.
+	NoReply bool
 }
 
 func (m MethodDescription) String() string {
-	var ins []string
-	for _, arg := range m.In {
-		ins = append(ins, arg.String())
-	}
-
-	out := ""
-	if len(m.Out) > 0 {
-		var outs []string
-		for _, arg := range m.Out {
-			outs = append(outs, arg.String())
+	var ret strings.Builder
+	ret.WriteString("func ")
+	ret.WriteString(m.Name)
+	ret.WriteByte('(')
+	for i, arg := range m.In {
+		if i > 0 {
+			ret.WriteString(", ")
 		}
-		out = fmt.Sprintf("(%s)", strings.Join(outs, ", "))
+		ret.WriteString(arg.String())
 	}
-	var anns []string
-	if m.Deprecated {
-		anns = append(anns, "deprecated")
-	}
-	if m.NoReply {
-		anns = append(anns, "noreply")
-	}
-	ann := ""
-	if len(anns) > 0 {
-		ann = fmt.Sprintf(" [%s]", strings.Join(anns, ", "))
-	}
+	ret.WriteByte(')')
 
-	return fmt.Sprintf("%s(%s) %s%s", m.Name, strings.Join(ins, ", "), out, ann)
+	if len(m.Out) > 0 {
+		ret.WriteString(" (")
+		for i, arg := range m.Out {
+			if i > 0 {
+				ret.WriteString(", ")
+			}
+			ret.WriteString(arg.String())
+		}
+		ret.WriteByte(')')
+	}
+	switch {
+	case m.Deprecated && m.NoReply:
+		ret.WriteString(" [deprecated,noreply]")
+	case m.Deprecated:
+		ret.WriteString(" [deprecated]")
+	case m.NoReply:
+		ret.WriteString(" [noreply]")
+	}
+	return ret.String()
 }
 
 func (m *MethodDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -155,18 +179,34 @@ func (m *MethodDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	return nil
 }
 
+// SignalDescription describes a DBus signal.
+//
+// Signal descriptions are provided by the DBus peer emitting the
+// signal, and may not accurately reflect the received signal.
 type SignalDescription struct {
-	Name       string
-	Args       []ArgumentDescription
+	Name string
+	Args []ArgumentDescription
+	// Deprecated, if true, indicates that the signal should be
+	// avoided in new code.
 	Deprecated bool
 }
 
 func (s SignalDescription) String() string {
-	var args []string
-	for _, arg := range s.Args {
-		args = append(args, arg.String())
+	var ret strings.Builder
+	ret.WriteString("signal ")
+	ret.WriteString(s.Name)
+	ret.WriteByte('(')
+	for i, arg := range s.Args {
+		if i > 0 {
+			ret.WriteString(", ")
+		}
+		ret.WriteString(arg.String())
 	}
-	return fmt.Sprintf("%s(%s)", s.Name, strings.Join(args, ", "))
+	ret.WriteByte(')')
+	if s.Deprecated {
+		ret.WriteString(" [deprecated]")
+	}
+	return ret.String()
 }
 
 func (s *SignalDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -205,52 +245,64 @@ func (s *SignalDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement)
 	return nil
 }
 
+// PropertyDescription describes a DBus property.
+//
+// Property descriptions are provied by the DBus peer offering the
+// property, and may not accurately reflect the actual property.
 type PropertyDescription struct {
 	Name string
 	Type Signature
 
+	// If true, Constant indicates that the property's value never
+	// changes, and thus can safely be cached locally.
 	Constant bool
+	// Readable is whether the property value can be read using
+	// Interface.GetProperty.
 	Readable bool
+	// Writable is whether the property value can be set using
+	// Interface.SetProperty
 	Writable bool
 
-	EmitsSignal         bool
+	// EmitsSignal is whether the property emits a PropertiesChanged
+	// signal when updated.
+	EmitsSignal bool
+	// SignalIncludesValue is whether the PropertiesChanged signal
+	// emitted when this property changes includes the new value. If
+	// false, the signal merely reports that the property's value has
+	// been invalidated, and the recipient must use
+	// Interface.GetProperty to retrieve the updated value.
 	SignalIncludesValue bool
 
+	// Deprecated, if true, indicates that the property should be
+	// avoided in new code.
 	Deprecated bool
 }
 
 func (p PropertyDescription) String() string {
-	var as []string
-
-	if p.Deprecated {
-		as = append(as, "deprecated")
-	}
+	var ret strings.Builder
+	fmt.Fprintf(&ret, "property %s %s [", p.Name, p.Type.Type())
 
 	switch {
 	case p.Readable && !p.Writable && p.Constant:
-		as = append(as, "const")
+		ret.WriteString("const")
 	case p.Readable && p.Writable:
-		as = append(as, "readwrite")
+		ret.WriteString("readwrite")
 	case p.Readable:
-		as = append(as, "readonly")
+		ret.WriteString("readonly")
 	case p.Writable:
-		as = append(as, "writeonly")
+		ret.WriteString("writeonly")
+	}
+	if p.Deprecated {
+		ret.WriteString(",deprecated")
 	}
 
-	switch {
-	case p.Readable && !p.Writable && p.Constant:
-		// nothing
-	case p.Constant:
-		as = append(as, "const")
-	case p.EmitsSignal && p.SignalIncludesValue:
-		as = append(as, "signals")
-	case p.EmitsSignal:
-		as = append(as, "invalidates")
-	default:
-		as = append(as, "no-signal")
+	if p.EmitsSignal && p.SignalIncludesValue {
+		ret.WriteString(",signals")
+	} else if p.EmitsSignal {
+		ret.WriteString(",invalidates")
 	}
-
-	return fmt.Sprintf("%s %s [%s]", p.Name, p.Type, strings.Join(as, ", "))
+	ret.WriteByte(']')
+	return ret.String()
 }
 
 func (p *PropertyDescription) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
@@ -319,7 +371,7 @@ func (a ArgumentDescription) String() string {
 		// argument names aren't load-bearing for correctness, fix
 		// them up here for readability.
 		n := strings.Replace(a.Name, "-", "_", -1)
-		return fmt.Sprintf("%s %s", n, a.Type)
+		return fmt.Sprintf("%s %s", n, a.Type.Type())
 	}
-	return a.Type.String()
+	return a.Type.Type().String()
 }
