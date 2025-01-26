@@ -108,7 +108,8 @@ interfaces that most objects implement:
   org.freedesktop.DBus.Properties
   org.freedesktop.DBus.Introspectable
 `,
-						Run: runListInterfaces,
+						SetFlags: command.Flags(flax.MustBind, &listInterfacesArgs),
+						Run:      runListInterfaces,
 					},
 					{
 						Name:  "props",
@@ -245,6 +246,10 @@ func runListPeers(env *command.Env) error {
 	return nil
 }
 
+var listInterfacesArgs struct {
+	Short bool `flag:"short,Only print interface names, not the full API"`
+}
+
 func runListInterfaces(env *command.Env) error {
 	conn, err := busConn(env.Context())
 	if err != nil {
@@ -274,6 +279,12 @@ func runListInterfaces(env *command.Env) error {
 				out.v(err)
 				continue
 			}
+			if listInterfacesArgs.Short {
+				switch iface.Name() {
+				case "org.freedesktop.DBus.Peer", "org.freedesktop.DBus.Properties", "org.freedesktop.DBus.Introspectable":
+					continue
+				}
+			}
 			if iface.Peer() != prev.Peer() {
 				out.indent(0)
 				if prev.Peer() != (dbus.Peer{}) {
@@ -289,7 +300,11 @@ func runListInterfaces(env *command.Env) error {
 				out.indent(2)
 			}
 
-			out.v(iface.Description)
+			if listInterfacesArgs.Short {
+				out.v(iface.Name())
+			} else {
+				out.v(iface.Description)
+			}
 			prev = iface.Interface
 		}
 	}
