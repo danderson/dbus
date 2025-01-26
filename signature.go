@@ -235,33 +235,23 @@ func signatureFor(t reflect.Type, stack []reflect.Type) (sig Signature, err erro
 		return Signature{}, typeErr(t, "nil interface")
 	}
 
-	// Deref all but one level of pointers, to check for Marshaler/Unmarshaler.
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	t = reflect.PointerTo(t)
+	t = derefType(t)
 
-	if t == reflect.TypeFor[*os.File]() {
-		return mkSignature(t, "h"), nil
-	}
-
-	if t.Implements(marshalerType) || t.Implements(unmarshalerType) {
-		if t.Elem().Implements(signerType) {
-			return reflect.Zero(t.Elem()).Interface().(signer).SignatureDBus(), nil
-		} else {
+	if pt := reflect.PointerTo(t); pt.Implements(marshalerType) || pt.Implements(unmarshalerType) {
+		if t.Implements(signerType) {
 			return reflect.Zero(t).Interface().(signer).SignatureDBus(), nil
+		} else {
+			return reflect.Zero(pt).Interface().(signer).SignatureDBus(), nil
 		}
 	}
-
-	// Strip off the last pointer layer, the rest of the signature
-	// logic operates on the leaf type.
-	t = t.Elem()
 
 	switch t {
 	case reflect.TypeFor[Signature]():
 		return mkSignature(t, "g"), nil
 	case reflect.TypeFor[ObjectPath]():
 		return mkSignature(t, "o"), nil
+	case reflect.TypeFor[os.File]():
+		return mkSignature(t, "h"), nil
 	case reflect.TypeFor[any]():
 		return mkSignature(t, "v"), nil
 	}

@@ -36,7 +36,7 @@ type signalMatch struct {
 // calling MatchNotification.
 func MatchNotification[NotificationT any]() *Match {
 	t := reflect.TypeFor[NotificationT]()
-	bt, _ := derefType(t)
+	bt := derefType(t)
 
 	prop, ok := propNameFor(bt)
 	if ok {
@@ -61,11 +61,11 @@ func MatchNotification[NotificationT any]() *Match {
 		panic(fmt.Errorf("getting signal struct info for %s: %w", bt, err))
 	}
 	for i, field := range inf.StructFields {
-		fieldBottom, derefField := derefType(field.Type)
+		fieldBottom := derefType(field.Type)
 		if fieldBottom == reflect.TypeFor[ObjectPath]() {
-			sm.objectFields[i] = getter[ObjectPath](field, derefField)
+			sm.objectFields[i] = getter[ObjectPath](field)
 		} else if fieldBottom.Kind() == reflect.String {
-			sm.stringFields[i] = getter[string](field, derefField)
+			sm.stringFields[i] = getter[string](field)
 		}
 	}
 
@@ -202,41 +202,6 @@ func (m *Match) matchesProperty(hdr *header, prop interfaceMember, body reflect.
 	}
 
 	return true
-}
-
-func getter[T any](f *structField, derefField bool) func(reflect.Value) T {
-	if derefField {
-		return func(v reflect.Value) T {
-			v = deref(f.GetWithZero(v))
-			if !v.IsValid() {
-				var zero T
-				return zero
-			}
-			return v.Interface().(T)
-		}
-	} else {
-		return func(v reflect.Value) T {
-			return f.GetWithZero(v).Interface().(T)
-		}
-	}
-}
-
-func derefType(t reflect.Type) (reflect.Type, bool) {
-	deref := t.Kind() == reflect.Pointer
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return t, deref
-}
-
-func deref(v reflect.Value) reflect.Value {
-	for v.Kind() == reflect.Pointer {
-		if v.IsNil() {
-			return reflect.Value{}
-		}
-		v = v.Elem()
-	}
-	return v
 }
 
 // Sender restricts the match to a single source Peer.

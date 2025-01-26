@@ -519,12 +519,7 @@ func (d *decoderGen) newVarDictFieldDecoder(f *structField) (fragments.DecoderFu
 				// TODO: could make the kind test and number of
 				// pointer unrolls static, type is known at compile
 				// time.
-				for fv.Kind() == reflect.Pointer {
-					if fv.IsNil() {
-						fv.Set(reflect.New(fv.Type().Elem()))
-					}
-					fv = fv.Elem()
-				}
+				fv = derefAlloc(fv)
 				// *any(underlying) -> underlying
 				inner := val.Elem().Elem()
 				// the any decoder unmarshals structs as pointers, so
