@@ -194,15 +194,11 @@ func (d *decoderGen) newObjectPathDecoder() fragments.DecoderFunc {
 
 func (d *decoderGen) newSignatureDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-		u8, err := d.Uint8()
+		s, err := d.Signature()
 		if err != nil {
 			return err
 		}
-		bs, err := d.Read(int(u8) + 1)
-		if err != nil {
-			return err
-		}
-		sig, err := ParseSignature(string(bs[:len(bs)-1]))
+		sig, err := ParseSignature(s)
 		if err != nil {
 			return err
 		}
@@ -213,9 +209,13 @@ func (d *decoderGen) newSignatureDecoder() fragments.DecoderFunc {
 
 func (d *decoderGen) newAnyDecoder() fragments.DecoderFunc {
 	return func(ctx context.Context, d *fragments.Decoder, v reflect.Value) error {
-		var sig Signature
-		if err := d.Value(ctx, &sig); err != nil {
-			return fmt.Errorf("reading variant signature: %w", err)
+		s, err := d.Signature()
+		if err != nil {
+			return err
+		}
+		sig, err := ParseSignature(s)
+		if err != nil {
+			return err
 		}
 		innerType := sig.Type()
 		if innerType == nil {

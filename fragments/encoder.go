@@ -59,6 +59,13 @@ func (e *Encoder) String(s string) {
 	e.Out = append(e.Out, 0)
 }
 
+// Signature writes a DBus signature.
+func (e *Encoder) Signature(s string) {
+	e.Uint8(uint8(len(s)))
+	e.Out = append(e.Out, s...)
+	e.Out = append(e.Out, 0)
+}
+
 // Uint8 writes a uint8.
 func (e *Encoder) Uint8(u8 uint8) {
 	e.Out = append(e.Out, u8)

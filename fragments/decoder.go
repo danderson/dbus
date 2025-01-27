@@ -82,6 +82,19 @@ func (d *Decoder) String() (string, error) {
 	return string(ret[:len(ret)-1]), nil
 }
 
+// Signature reads a DBus signature.
+func (d *Decoder) Signature() (string, error) {
+	ln, err := d.Uint8()
+	if err != nil {
+		return "", err
+	}
+	ret, err := d.Read(int(ln) + 1)
+	if err != nil {
+		return "", err
+	}
+	return string(ret[:len(ret)-1]), nil
+}
+
 // Uint8 reads a uint8.
 func (d *Decoder) Uint8() (uint8, error) {
 	bs, err := d.Read(1)

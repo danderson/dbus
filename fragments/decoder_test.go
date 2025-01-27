@@ -55,6 +55,19 @@ func (d *mustDecoder) MustString(want string) {
 	}
 }
 
+func (d *mustDecoder) MustSignature(want string) {
+	got, err := d.Signature()
+	if err != nil {
+		d.t.Fatalf("Signature() got err: %v", err)
+	}
+	if got != want {
+		d.t.Fatalf("Signature() got %q, want %q", got, want)
+	}
+	if testing.Verbose() {
+		d.t.Logf("Signature() = %q", got)
+	}
+}
+
 func (d *mustDecoder) MustUint8(want uint8) {
 	got, err := d.Uint8()
 	if err != nil {
@@ -193,6 +206,18 @@ func TestDecoder(t *testing.T) {
 			},
 			func(d *mustDecoder) {
 				d.MustString("foo")
+			},
+		},
+
+		{
+			"signature",
+			[]byte{
+				0x03,
+				0x66, 0x6f, 0x6f,
+				0x00,
+			},
+			func(d *mustDecoder) {
+				d.MustSignature("foo")
 			},
 		},
 

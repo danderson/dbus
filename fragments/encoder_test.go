@@ -47,6 +47,18 @@ func TestEncoder(t *testing.T) {
 		},
 
 		{
+			"signature",
+			func(e *fragments.Encoder) {
+				e.Signature("foo")
+			},
+			[]byte{
+				0x03,             // length
+				0x66, 0x6f, 0x6f, // val
+				0x00, // terminator
+			},
+		},
+
+		{
 			"uints",
 			func(e *fragments.Encoder) {
 				e.Uint8(42)

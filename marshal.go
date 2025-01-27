@@ -170,9 +170,7 @@ func (e *encoderGen) newSignatureEncoder() fragments.EncoderFunc {
 		if len(s) > 255 {
 			return fmt.Errorf("signature exceeds maximum length of 255 bytes")
 		}
-		e.Uint8(uint8(len(s)))
-		e.Write([]byte(s))
-		e.Uint8(0)
+		e.Signature(s)
 		return nil
 	}
 }
