@@ -21,6 +21,30 @@ import (
 	"github.com/danderson/dbus/transport"
 )
 
+// Conn is a DBus connection.
+type Conn struct {
+	t        transport.Transport
+	clientID string
+	bus      Object
+
+	closeOnce func() error
+
+	// Only touched by writeMsg.
+	writeMu sync.Mutex
+	enc     fragments.Encoder
+	encBody []byte
+	encHdr  []byte
+
+	mu         sync.Mutex
+	closing    bool // no new Watch or Claim
+	closed     bool // no new RPCs at all
+	calls      map[uint32]*pendingCall
+	lastSerial uint32
+	watchers   mapset.Set[*Watcher]
+	claims     mapset.Set[*Claim]
+	handlers   map[interfaceMember]handlerFunc
+}
+
 // SystemBus connects to the system bus.
 func SystemBus(ctx context.Context) (*Conn, error) {
 	return Dial(ctx, "/run/dbus/system_bus_socket")
@@ -62,6 +86,7 @@ func Dial(ctx context.Context, path string) (*Conn, error) {
 		calls:    map[uint32]*pendingCall{},
 		handlers: map[interfaceMember]handlerFunc{},
 	}
+	ret.closeOnce = sync.OnceValue(ret.close)
 	ret.bus = ret.
 		Peer("org.freedesktop.DBus").
 		Object("/org/freedesktop/DBus")
@@ -94,27 +119,6 @@ func Dial(ctx context.Context, path string) (*Conn, error) {
 	return ret, nil
 }
 
-// Conn is a DBus connection.
-type Conn struct {
-	t        transport.Transport
-	clientID string
-
-	bus Object
-
-	writeMu sync.Mutex
-	enc     fragments.Encoder
-	encBody []byte
-	encHdr  []byte
-
-	mu         sync.Mutex
-	closed     bool
-	calls      map[uint32]*pendingCall
-	lastSerial uint32
-	watchers   mapset.Set[*Watcher]
-	claims     mapset.Set[*Claim]
-	handlers   map[interfaceMember]handlerFunc
-}
-
 type interfaceMember struct {
 	Interface string
 	Member    string
@@ -144,29 +148,38 @@ func (c *Conn) lockedWatchers() iter.Seq[*Watcher] {
 
 // Close closes the DBus connection.
 func (c *Conn) Close() error {
-	var (
-		pend map[uint32]*pendingCall
-		ws   mapset.Set[*Watcher]
-		cs   mapset.Set[*Claim]
-	)
-	{
-		c.mu.Lock()
-		c.closed = true
-		pend, c.calls = c.calls, nil
-		ws, c.watchers = c.watchers, nil
-		cs, c.claims = c.claims, nil
-		c.mu.Unlock()
+	return c.closeOnce()
+}
+
+func (c *Conn) startClose() (mapset.Set[*Watcher], mapset.Set[*Claim]) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	watch, claim := c.watchers, c.claims
+
+	c.closing = true
+	c.watchers = nil
+	c.claims = nil
+
+	return watch, claim
+}
+
+func (c *Conn) close() error {
+	watch, claim := c.startClose()
+	for w := range watch {
+		w.Close()
 	}
-	for c := range maps.Values(pend) {
+	for c := range claim {
+		c.Close()
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closed = true
+	for c := range maps.Values(c.calls) {
 		c.err = net.ErrClosed
 		close(c.notify)
 	}
-	for w := range ws {
-		w.Close()
-	}
-	for c := range cs {
-		c.Close()
-	}
+	c.calls = nil
 	return c.t.Close()
 }
 
@@ -189,6 +202,9 @@ func (c *Conn) Peer(name string) Peer {
 func (c *Conn) writeMsg(ctx context.Context, hdr *header, body any) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
 
 	var files []*os.File
 	c.encBody = c.encBody[:0]
@@ -317,6 +333,9 @@ func (c *Conn) dispatchCall(ctx context.Context, msg *msg) {
 		c.lastSerial++
 		return handler, c.lastSerial
 	}()
+	if serial == 0 {
+		return
+	}
 
 	respHdr := &header{
 		Type:        msgTypeReturn,
@@ -346,6 +365,9 @@ func (c *Conn) dispatchReturn(ctx context.Context, msg *msg) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		if c.closed {
+			return nil
+		}
 		ret := c.calls[msg.ReplySerial]
 		delete(c.calls, msg.ReplySerial)
 		return ret
@@ -369,6 +391,9 @@ func (c *Conn) dispatchErr(msg *msg) error {
 	pending := func() *pendingCall {
 		c.mu.Lock()
 		defer c.mu.Unlock()
+		if c.closed {
+			return nil
+		}
 		ret := c.calls[msg.ReplySerial]
 		delete(c.calls, msg.ReplySerial)
 		return ret
@@ -430,8 +455,6 @@ func (c *Conn) dispatchSignal(ctx context.Context, msg *msg) error {
 }
 
 func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
-	// Make a copy of the body decoder, so that dispatchSignal can
-	// still do the generic property change dispatch as well.
 	body := msg.Decoder()
 
 	iface, err := body.String()
@@ -444,8 +467,7 @@ func (c *Conn) dispatchPropChange(ctx context.Context, msg *msg) error {
 	ctx = withContextEmitter(ctx, emitter)
 
 	// Decode the change map[string]any by hand, so that we can
-	// directly map each variant value to the correct property value
-	// directly.
+	// directly map each variant value to the correct property value.
 	_, err = body.Array(true, func(i int) error {
 		err := body.Struct(func() error {
 			propName, err := body.String()
@@ -585,6 +607,10 @@ func (c *Conn) EmitSignal(ctx context.Context, obj ObjectPath, signal any) error
 		c.lastSerial++
 		return c.lastSerial
 	}()
+	if serial == 0 {
+		return net.ErrClosed
+	}
+
 	hdr := header{
 		Type:      msgTypeSignal,
 		Version:   1,
@@ -612,6 +638,9 @@ func (c *Conn) Handle(interfaceName, methodName string, fn any) {
 	handler := handlerForFunc(fn)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
 	c.handlers[interfaceMember{interfaceName, methodName}] = handler
 }
 
