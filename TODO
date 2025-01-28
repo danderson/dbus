@@ -3,3 +3,7 @@ Figure out an approach to fuzz Marshal/Unmarshal.
 Export fragment mapper funcs for people doing custom encoding stuff.
 
 Use a generic Nested[T] in test helpers to reduce boilerplate.
+
+Make NameAcquired/NameLost matches skip AddMatch/RemoveMatch? The bus
+unicasts those notifications to the client regardless of matches, we
+only need to filter it in local signal dispatching.
