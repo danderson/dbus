@@ -2,7 +2,9 @@ package dbus
 
 import (
 	"context"
+	"errors"
 	"maps"
+	"net"
 	"reflect"
 	"sync"
 
@@ -12,40 +14,18 @@ import (
 
 const maxWatcherQueue = 20
 
-// Watch watches the bus for notifications from other bus
-// participants.
-//
-// A newly created Watcher delivers no notifications. The caller must
-// use [Watcher.Match] to specify which signals and property changes
-// the Watcher should provide.
-func (c *Conn) Watch() *Watcher {
-	w := &Watcher{
-		conn:        c,
-		signals:     make(chan *Notification),
-		wakePump:    make(chan struct{}, 1),
-		stopPump:    make(chan struct{}),
-		pumpStopped: make(chan struct{}),
-		matches:     mapset.New[*Match](),
-	}
-	go w.pump()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.watchers.Add(w)
-	return w
-}
-
-// A Watcher delivers signals received from the bus that match its
-// filters.
+// A Watcher delivers notifications received from the bus that match
+// its filters.
 type Watcher struct {
 	conn     *Conn
-	signals  chan *Notification
-	wakePump chan struct{}
+	wakePump chan struct{} // closed to halt the pump
 
-	stopPump    chan struct{}
-	pumpStopped chan struct{}
+	// owned by the pump goroutine.
+	notifications chan *Notification
+	pumpStopped   chan struct{}
 
 	mu      sync.Mutex
+	closed  bool
 	queue   queue.Queue[*Notification]
 	matches mapset.Set[*Match]
 }
@@ -75,59 +55,130 @@ type Notification struct {
 	Overflow bool
 }
 
-// Close shuts down the Watcher.
-func (w *Watcher) Close() {
-	select {
-	case <-w.pumpStopped:
-		return
-	default:
+// Watch watches the bus for notifications from other bus
+// participants.
+//
+// A newly created Watcher delivers no notifications. The caller must
+// use [Watcher.Match] to specify which signals and property changes
+// the Watcher should provide.
+func (c *Conn) Watch() (*Watcher, error) {
+	w := &Watcher{
+		conn:          c,
+		notifications: make(chan *Notification),
+		wakePump:      make(chan struct{}, 1),
+		pumpStopped:   make(chan struct{}),
+		matches:       mapset.New[*Match](),
 	}
 
-	close(w.stopPump)
+	if err := c.addWatcher(w); err != nil {
+		return nil, err
+	}
+	go w.pump()
+	return w, nil
+}
+
+func (c *Conn) addWatcher(w *Watcher) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	c.watchers.Add(w)
+	return nil
+}
+
+func (c *Conn) removeWatcher(w *Watcher) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.watchers.Remove(w)
+}
+
+// Close shuts down the Watcher.
+func (w *Watcher) Close() {
+	ms, shouldClose := w.clearMatches()
+	if !shouldClose {
+		return
+	}
+
 	close(w.wakePump)
 	<-w.pumpStopped
 
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	for m := range w.matches {
+	w.conn.removeWatcher(w)
+	for m := range ms {
 		w.conn.removeMatch(context.Background(), m)
 	}
+}
+
+func (w *Watcher) addMatch(m *Match) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return net.ErrClosed
+	}
+	w.matches.Add(m)
+	return nil
+}
+
+func (w *Watcher) removeMatch(m *Match) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return false
+	}
+	delete(w.matches, m)
+	return true
+}
+
+func (w *Watcher) clearMatches() (mapset.Set[*Match], bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return nil, false
+	}
+
+	ret := w.matches
+	w.closed = true
+	w.matches = nil
 	w.queue.Clear()
+	return ret, true
 }
 
-// Chan returns the channel on which signals are delivered.
+// Chan returns the channel on which notifications are delivered.
 //
-// The caller must drain this channel of new signals promptly, to
-// avoid overflowing the Watcher's receive queue and losing Notifications of
-// interest. Missing signals due to an overflow are indicated by the
-// Overflow field of the [Notification] that immediately precedes the
-// discarded signal(s).
+// The caller must drain this channel of new notifications promptly,
+// to avoid overflowing the Watcher's receive queue and losing
+// notifications. Missing notifications due to an overflow are
+// indicated by the Overflow field of the [Notification] that
+// immediately precedes the discarded signal(s).
 func (w *Watcher) Chan() <-chan *Notification {
-	return w.signals
+	return w.notifications
 }
 
-// Match requests delivery of signals that match the specification m.
+// Match requests delivery of notifications that match the
+// specification m.
 //
-// Matches are additive: a signal is delivered if it matches any of
-// the Watcher's match specifications.
+// Matches are additive: a notification is delivered if it matches any
+// of the Watcher's match specifications.
 //
 // If the match is added successfully, the returned remove function
 // may be used to remove thee match without affecting other
 // matches. Use of remove is optional, and may be ignored if the set
 // of matches doesn't need to change for the lifetime of the Watcher.
-func (w *Watcher) Match(m *Match) (remove func(), err error) {
+func (w *Watcher) Match(m *Match) (remove func() error, err error) {
 	if err = w.conn.addMatch(context.Background(), m); err != nil {
 		return nil, err
 	}
 
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.matches.Add(m)
-	return func() {
-		w.conn.removeMatch(context.Background(), m)
-		w.mu.Lock()
-		defer w.mu.Unlock()
-		delete(w.matches, m)
+	if err = w.addMatch(m); err != nil {
+		rmErr := w.conn.removeMatch(context.Background(), m)
+		return nil, errors.Join(err, rmErr)
+	}
+
+	return func() error {
+		if !w.removeMatch(m) {
+			return nil
+		}
+		return w.conn.removeMatch(context.Background(), m)
 	}, nil
 }
 
@@ -150,12 +201,8 @@ func (w *Watcher) enqueueLocked(n Notification) {
 func (w *Watcher) deliverSignal(sender Interface, hdr *header, body reflect.Value) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	select {
-	case <-w.pumpStopped:
-		// raced with a Close, this watcher is done.
+	if w.closed {
 		return
-	default:
 	}
 
 	want := func() bool {
@@ -180,12 +227,8 @@ func (w *Watcher) deliverSignal(sender Interface, hdr *header, body reflect.Valu
 func (w *Watcher) deliverProp(sender Interface, hdr *header, prop interfaceMember, value reflect.Value) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	select {
-	case <-w.pumpStopped:
-		// raced with a Close, this watcher is done.
+	if w.closed {
 		return
-	default:
 	}
 
 	want := func() bool {
@@ -207,28 +250,36 @@ func (w *Watcher) deliverProp(sender Interface, hdr *header, prop interfaceMembe
 	})
 }
 
+func (w *Watcher) popNotification() *Notification {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ret, _ := w.queue.Pop()
+	return ret
+}
+
 func (w *Watcher) pump() {
 	defer close(w.pumpStopped)
-	defer close(w.signals)
+	defer close(w.notifications)
 	for {
-		sig := func() *Notification {
-			w.mu.Lock()
-			defer w.mu.Unlock()
-			ret, _ := w.queue.Pop()
-			return ret
-		}()
-		if sig == nil {
-			select {
-			case <-w.stopPump:
+		n := w.popNotification()
+		if n == nil {
+			_, ok := <-w.wakePump
+			if !ok {
 				return
-			case <-w.wakePump:
-				continue
 			}
-		}
-		select {
-		case w.signals <- sig:
-		case <-w.stopPump:
-			return
+		} else {
+		deliver:
+			for {
+				select {
+				case w.notifications <- n:
+					break deliver
+				case _, ok := <-w.wakePump:
+					if !ok {
+						return
+					}
+					continue
+				}
+			}
 		}
 	}
 }

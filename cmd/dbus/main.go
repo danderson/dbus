@@ -434,8 +434,14 @@ func runListen(env *command.Env) error {
 	}
 	defer conn.Close()
 
-	w := conn.Watch()
-	w.Match(dbus.MatchAllSignals())
+	w, err := conn.Watch()
+	if err != nil {
+		return fmt.Errorf("creating watcher: %w", err)
+	}
+	defer w.Close()
+	if _, err := w.Match(dbus.MatchAllSignals()); err != nil {
+		return fmt.Errorf("watching all signals: %w", err)
+	}
 	fmt.Println("Listening for signals...")
 	for {
 		select {

@@ -15,15 +15,20 @@ import (
 // must monitor [Claim.Chan] to find out if and when the name gets
 // assigned to them.
 func (c *Conn) Claim(name string, opts ClaimOptions) (*Claim, error) {
+	w, err := c.Watch()
+	if err != nil {
+		return nil, err
+	}
+
 	ret := &Claim{
 		c:           c,
-		w:           c.Watch(),
+		w:           w,
 		owner:       make(chan bool, 1),
 		name:        name,
 		pumpStopped: make(chan struct{}),
 		last:        false,
 	}
-	_, err := ret.w.Match(MatchNotification[NameAcquired]().ArgStr(0, name))
+	_, err = ret.w.Match(MatchNotification[NameAcquired]().ArgStr(0, name))
 	if err != nil {
 		ret.w.Close()
 		return nil, err
