@@ -11,6 +11,10 @@ import (
 type ClaimOptions struct {
 	// AllowReplacement is whether to allow another request that sets
 	// TryReplace to take over ownership.
+	//
+	// A claim that gets replaced as the current owner gets moved to
+	// the head of the backup queue, or gets dropped from the line of
+	// succession entirely if NoQueue is set.
 	AllowReplacement bool
 	// TryReplace is whether to attempt to replace the current owner,
 	// if the name already has an owner.
@@ -29,14 +33,10 @@ type ClaimOptions struct {
 	// NoQueue, if set, causes this claim to never join the backup
 	// queue for any reason.
 	//
-	// If ownership of the name cannot be secured when the Claim is
-	// created, creation fails with an error.
-	//
-	// If ownership is secured and a later event causes loss of
-	// ownership (such as this claim setting AllowReplacement, and
-	// another client making a claim with TryReplace), the claim
-	// becomes inactive until a new request is explicitly made with
-	// Claim.Request.
+	// If ownership of the name cannot be secured when the initial
+	// claim is made, or if ownership is later lost due to the effect
+	// of AllowReplacement/TryReplace, the claim becomes inactive
+	// until a new request is explicitly made with Claim.Request.
 	NoQueue bool
 }
 
@@ -141,6 +141,9 @@ func (c *Conn) removeClaim(cl *Claim) {
 // If this claim is not the current owner, the bus considers this
 // claim anew with the updated [ClaimOptions], as if this client were
 // making a claim for the first time.
+//
+// Request only returns a non-nil error if sending the updated claim
+// request fails. Failure to acquire ownership is not an error.
 func (c *Claim) Request(opts ClaimOptions) error {
 	var req struct {
 		Name  string

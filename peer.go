@@ -185,8 +185,11 @@ func (p Peer) Owner(ctx context.Context) (Peer, error) {
 }
 
 // QueuedOwners returns the list of peers that have requested
-// ownership of this peer's name, but do not currently own the
-// name. To retrieve the current owner, use [Peer.Owner].
+// ownership of this peer's name.
+//
+// The returned list begins with the current owner, followed by other
+// claimants in the order of succession. If you only need the current
+// owner, use [Peer.Owner] instead.
 func (p Peer) QueuedOwners(ctx context.Context) ([]Peer, error) {
 	var names []string
 	if err := p.Conn().bus.Interface(ifaceBus).Call(ctx, "ListQueuedOwners", p.name, &names); err != nil {

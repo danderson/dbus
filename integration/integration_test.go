@@ -1,10 +1,12 @@
 package dbus_test
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -52,21 +54,10 @@ func runTestDBus(t *testing.T) (mkConn func() *dbus.Conn, stop func()) {
 			panic(fmt.Errorf("dbus stopped prematurely: %w", err))
 		}
 	}()
+
 	for {
 		if _, err := os.Stat(sock); err == nil {
-			mkConn := func() *dbus.Conn {
-				ret, err := dbus.Dial(context.Background(), sock)
-				if err != nil {
-					panic(fmt.Errorf("failed to connect to test bus: %w", err))
-				}
-				return ret
-			}
-			stop := func() {
-				close(stopCh)
-				cmd.Process.Kill()
-				<-stoppedCh
-			}
-			return mkConn, stop
+			break
 		} else if errors.Is(err, fs.ErrNotExist) {
 			time.Sleep(10 * time.Millisecond)
 			continue
@@ -74,6 +65,45 @@ func runTestDBus(t *testing.T) (mkConn func() *dbus.Conn, stop func()) {
 			t.Fatalf("waiting for bus socket: %v", err)
 		}
 	}
+
+	stoppedMonCh := make(chan struct{})
+	// Only start the monitor once the bus is running.
+	mon := exec.Command("dbus-monitor", "--address", "unix:path="+sock)
+	lw := newLogWriter(t)
+	mon.Stdout = lw
+	mon.Stderr = lw
+	if err := mon.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer close(stoppedMonCh)
+		err := mon.Wait()
+		select {
+		case <-stopCh:
+		default:
+			panic(fmt.Errorf("dbus-monitor stopped prematurely: %w", err))
+		}
+		lw.Flush()
+	}()
+	// dbus-monitor starts by emitting 4 log lines that reflect
+	// its own joining and leaving the bus.
+	lw.WaitForLines(4)
+
+	mkConn = func() *dbus.Conn {
+		ret, err := dbus.Dial(context.Background(), sock)
+		if err != nil {
+			panic(fmt.Errorf("failed to connect to test bus: %w", err))
+		}
+		return ret
+	}
+	stop = func() {
+		close(stopCh)
+		cmd.Process.Kill()
+		mon.Process.Kill()
+		<-stoppedCh
+		<-stoppedMonCh
+	}
+	return mkConn, stop
 }
 
 func TestIntegration(t *testing.T) {
@@ -83,7 +113,7 @@ func TestIntegration(t *testing.T) {
 	conn := mkConn()
 	defer conn.Close()
 
-	if got, want := conn.LocalName(), ":1.0"; got != want {
+	if got, want := conn.LocalName(), ":1.1"; got != want {
 		t.Errorf("unexpected bus name for conn, got %s want %s", got, want)
 	}
 
@@ -93,7 +123,7 @@ func TestIntegration(t *testing.T) {
 			t.Errorf("Peers() failed: %v", err)
 		} else {
 			wantPeers := []dbus.Peer{
-				conn.Peer(":1.0"),
+				conn.Peer(":1.1"),
 				conn.Peer("org.freedesktop.DBus"),
 			}
 			slices.SortFunc(peers, dbus.Peer.Compare)
@@ -210,118 +240,349 @@ func TestIntegration(t *testing.T) {
 			t.Logf("bus.Owner() = %s", owner)
 		}
 	})
+}
 
-	t.Run("Claim", func(t *testing.T) {
-		claim1, err := conn.Claim("org.test.Bus", dbus.ClaimOptions{})
-		if err != nil {
-			t.Errorf("conn.Claim() failed: %v", err)
-		} else if got, want := claim1.Name(), "org.test.Bus"; got != want {
-			t.Errorf("claim1.Name() = %q, want %q", got, want)
-		} else {
-			timeout := time.After(time.Second)
-		waitOwner1:
-			for {
-				select {
-				case <-timeout:
-					t.Fatalf("failed to get claim1 on bus name")
-				case owner := <-claim1.Chan():
-					if testing.Verbose() {
-						t.Logf("claim1 owner of org.test.Bus: %v", owner)
-					}
-					if owner {
-						break waitOwner1
-					}
-				}
+func awaitOwner(t *testing.T, claim *dbus.Claim, claimName string, wantOwner bool) {
+	t.Helper()
+	if claimName != "" {
+		claimName = "claim " + claimName
+	} else {
+		claimName = "claim"
+	}
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case gotOwner := <-claim.Chan():
+			if testing.Verbose() {
+				t.Logf("%s ownership of %q: %v, want %v", claimName, claim.Name(), gotOwner, wantOwner)
 			}
+			if gotOwner == wantOwner {
+				return
+			}
+		case <-timeout:
+			t.Fatalf("timed out waiting for %s ownership of %q to be %v", claimName, claim.Name(), wantOwner)
 		}
-		defer claim1.Close()
+	}
+}
 
-		testPeer := conn.Peer("org.test.Bus")
-		owner, err := testPeer.Owner(context.Background())
+func checkClaim(t *testing.T, conn *dbus.Conn, busName string, owners ...*dbus.Conn) {
+	t.Helper()
+	p := conn.Peer(busName)
+	owner, err := p.Owner(context.Background())
+	if err != nil {
+		t.Fatalf("getting owner of %q: %v", busName, err)
+	}
+	if gotOwner, wantOwner := owner.Name(), owners[0].LocalName(); gotOwner != wantOwner {
+		t.Fatalf("owner of %q is %q, want %q", busName, gotOwner, wantOwner)
+	}
+	if testing.Verbose() {
+		t.Logf("owner of %q is %q", busName, owner.Name())
+	}
+
+	queued, err := p.QueuedOwners(context.Background())
+	if err != nil {
+		t.Fatalf("getting queued owners of %q: %v", busName, err)
+	}
+	var wantQueued, gotQueued []string
+	for _, c := range owners {
+		wantQueued = append(wantQueued, c.LocalName())
+	}
+	for _, c := range queued {
+		gotQueued = append(gotQueued, c.Name())
+	}
+	if !slices.Equal(gotQueued, wantQueued) {
+		t.Fatalf("wrong owner queue for %q:\n  got: %v\n want: %v", busName, gotQueued, wantQueued)
+	}
+	if testing.Verbose() {
+		t.Logf("owner queue of %q is %v", busName, gotQueued)
+	}
+}
+
+func TestClaim(t *testing.T) {
+	t.Run("trivial", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn := mkConn()
+		defer conn.Close()
+
+		claim, err := conn.Claim("org.test.Bus", dbus.ClaimOptions{})
 		if err != nil {
-			t.Errorf("testPeer.Owner() failed: %v", err)
-		} else if got, want := owner.Name(), ":1.0"; got != want {
-			t.Errorf("testPeer.Owner() = %q, want %q", got, want)
-		} else if testing.Verbose() {
-			t.Logf("testPeer.Owner() = %s", owner)
+			t.Fatalf("conn.Claim() failed: %v", err)
+		} else if got, want := claim.Name(), "org.test.Bus"; got != want {
+			t.Fatalf("claim.Name() = %q, want %q", got, want)
 		}
+
+		awaitOwner(t, claim, "", true)
+		checkClaim(t, conn, "org.test.Bus", conn)
+	})
+
+	t.Run("normal succession", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn1 := mkConn()
+		defer conn1.Close()
+
+		claim1, err := conn1.Claim("org.test.Bus", dbus.ClaimOptions{})
+		if err != nil {
+			t.Fatalf("conn1.Claim() failed: %v", err)
+		}
+
+		awaitOwner(t, claim1, "1", true)
 
 		conn2 := mkConn()
 		defer conn2.Close()
 
 		claim2, err := conn2.Claim("org.test.Bus", dbus.ClaimOptions{})
 		if err != nil {
-			t.Errorf("conn2.Claim() failed: %v", err)
-		}
-		select {
-		case <-time.After(time.Second):
-			t.Fatal("no owner signal for claim2")
-		case owner := <-claim2.Chan():
-			if owner {
-				t.Fatal("claim2 became owner while claim1 still active")
-			}
-			t.Log(owner)
-		}
-		select {
-		case owner := <-claim2.Chan():
-			if owner {
-				t.Fatal("claim2 became owner while claim1 still active")
-			}
-		default:
+			t.Fatalf("conn2.Claim() failed: %v", err)
 		}
 
-		owner, err = testPeer.Owner(context.Background())
-		if err != nil {
-			t.Fatalf("testPeer.Owner() failed: %v", err)
-		}
-		if got, want := owner.Name(), ":1.0"; got != want {
-			t.Fatalf("testPeer has wrong owner %q, want %q", got, want)
-		}
-
-		queued, err := testPeer.QueuedOwners(context.Background())
-		if err != nil {
-			t.Fatalf("testPeer.QueuedOwners() failed: %v", err)
-		} else {
-			got := fmt.Sprint(queued)
-			want := "[:1.0 :1.1]"
-			if got != want {
-				t.Errorf("testPeer.QueuedOwners() is wrong\n  got: %s\n want: %s", got, want)
-			} else if testing.Verbose() {
-				t.Logf("testPeer.QueuedOwners() = %s", got)
-			}
-		}
+		awaitOwner(t, claim2, "2", false)
+		checkClaim(t, conn1, "org.test.Bus", conn1, conn2)
 
 		claim1.Close()
-		timeout := time.After(time.Second)
-	waitOwner2:
-		for {
-			select {
-			case <-timeout:
-				t.Fatalf("claim1 failed to lose claim on bus name")
-			case owner := <-claim1.Chan():
-				if testing.Verbose() {
-					t.Logf("claim1 owner of org.test.Bus: %v", owner)
-				}
-				if !owner {
-					break waitOwner2
-				}
-			}
+		awaitOwner(t, claim1, "1", false)
+		awaitOwner(t, claim2, "2", true)
+		checkClaim(t, conn1, "org.test.Bus", conn2)
+
+		claim1, err = conn1.Claim("org.test.Bus", dbus.ClaimOptions{})
+		if err != nil {
+			t.Fatalf("conn1.Claim() failed: %v", err)
 		}
-		timeout = time.After(time.Second)
-	waitOwner3:
-		for {
-			select {
-			case <-timeout:
-				t.Fatalf("claim2 failed to get claim on bus name")
-			case owner := <-claim2.Chan():
-				if testing.Verbose() {
-					t.Logf("claim2 owner of org.test.Bus: %v", owner)
-				}
-				if owner {
-					break waitOwner3
-				}
-			}
-		}
+
+		awaitOwner(t, claim1, "1b", false)
+		checkClaim(t, conn1, "org.test.Bus", conn2, conn1)
 	})
 
+	t.Run("force replace", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn1, conn2, conn3 := mkConn(), mkConn(), mkConn()
+		defer conn1.Close()
+		defer conn2.Close()
+		defer conn3.Close()
+
+		claim1, err := conn1.Claim("org.test.Bus", dbus.ClaimOptions{})
+		if err != nil {
+			t.Fatalf("conn1.Claim() failed: %v", err)
+		}
+		defer claim1.Close()
+		awaitOwner(t, claim1, "1", true)
+
+		// TryReplace doesn't replace if the current owner disallows it
+		claim2, err := conn2.Claim("org.test.Bus", dbus.ClaimOptions{
+			TryReplace: true,
+		})
+		if err != nil {
+			t.Fatalf("conn2.Claim() failed: %v", err)
+		}
+		defer claim2.Close()
+		awaitOwner(t, claim2, "2", false)
+		checkClaim(t, conn1, "org.test.Bus", conn1, conn2)
+
+		// Updating AllowReplacement doesn't affect past replacement
+		// attempts
+		err = claim1.Request(dbus.ClaimOptions{
+			AllowReplacement: true,
+		})
+		if err != nil {
+			t.Fatalf("conn1.Request() failed: %v", err)
+		}
+		checkClaim(t, conn1, "org.test.Bus", conn1, conn2)
+
+		// New replacement attempt succeeds
+		claim3, err := conn3.Claim("org.test.Bus", dbus.ClaimOptions{
+			AllowReplacement: true,
+			TryReplace:       true,
+		})
+		if err != nil {
+			t.Fatalf("conn3.Claim() failed: %v", err)
+		}
+		defer claim3.Close()
+
+		awaitOwner(t, claim3, "3", true)
+		awaitOwner(t, claim1, "1", false)
+		checkClaim(t, conn1, "org.test.Bus", conn3, conn1, conn2)
+
+		// Old replacement attempt can retry and take ownership.
+		err = claim2.Request(dbus.ClaimOptions{
+			TryReplace: true,
+		})
+		if err != nil {
+			t.Fatalf("claim2.Request() failed: %v", err)
+		}
+
+		awaitOwner(t, claim2, "2", true)
+		awaitOwner(t, claim3, "3", false)
+		checkClaim(t, conn1, "org.test.Bus", conn2, conn3, conn1)
+
+		// departure of current owner still works normally
+		claim2.Close()
+		awaitOwner(t, claim2, "2", false)
+		awaitOwner(t, claim3, "3", true)
+		checkClaim(t, conn1, "org.test.Bus", conn3, conn1)
+
+		// claim that previously allowed replacement still allows
+		// replacement.
+		err = claim1.Request(dbus.ClaimOptions{
+			TryReplace: true,
+		})
+		if err != nil {
+			t.Fatalf("claim1.Request() failed: %v", err)
+		}
+		awaitOwner(t, claim1, "1", true)
+		awaitOwner(t, claim3, "3", false)
+		checkClaim(t, conn1, "org.test.Bus", conn1, conn3)
+	})
+
+	t.Run("no queue", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn1, conn2, conn3 := mkConn(), mkConn(), mkConn()
+		defer conn1.Close()
+		defer conn2.Close()
+		defer conn3.Close()
+
+		claim1, err := conn1.Claim("org.test.Bus", dbus.ClaimOptions{
+			NoQueue: true,
+		})
+		if err != nil {
+			t.Fatalf("conn1.Claim() failed: %v", err)
+		}
+		awaitOwner(t, claim1, "1", true)
+		checkClaim(t, conn1, "org.test.Bus", conn1)
+
+		// No queue claim doesn't get ownership, doesn't join the
+		// queue.
+		claim2, err := conn2.Claim("org.test.Bus", dbus.ClaimOptions{
+			NoQueue: true,
+		})
+		if err != nil {
+			t.Fatalf("conn2.Claim() failed: %v", err)
+		}
+		awaitOwner(t, claim2, "2", false)
+		checkClaim(t, conn1, "org.test.Bus", conn1)
+
+		// Repeat request does the same.
+		err = claim2.Request(dbus.ClaimOptions{
+			NoQueue: true,
+		})
+		if err != nil {
+			t.Fatalf("claim2.Request() failed: %v", err)
+		}
+		checkClaim(t, conn1, "org.test.Bus", conn1)
+
+		// Vanishing other owner doesn't transfer ownership.
+		claim1.Close()
+		awaitOwner(t, claim1, "1", false)
+		exists, err := conn1.Peer("org.test.Bus").Exists(context.Background())
+		if err != nil {
+			t.Fatalf("conn1.Peer.Exists failed: %v", err)
+		}
+		if exists {
+			t.Fatal("org.test.Bus still exists, want no owner")
+		}
+
+		// Explicit request gets ownership again
+		err = claim2.Request(dbus.ClaimOptions{
+			AllowReplacement: true,
+			NoQueue:          true,
+		})
+		if err != nil {
+			t.Fatalf("claim2.Request failed: %v", err)
+		}
+
+		awaitOwner(t, claim2, "2", true)
+		checkClaim(t, conn1, "org.test.Bus", conn2)
+
+		// no-queue replacement, current owner leaves the queue.
+		claim1, err = conn1.Claim("org.test.Bus", dbus.ClaimOptions{
+			TryReplace: true,
+			NoQueue:    true,
+		})
+		if err != nil {
+			t.Fatalf("conn1.Claim failed: %v", err)
+		}
+		defer claim1.Close()
+		awaitOwner(t, claim1, "1", true)
+		awaitOwner(t, claim2, "2", false)
+		checkClaim(t, conn1, "org.test.Bus", conn1)
+
+		// replacer going away doesn't restore claim2's ownership
+		claim1.Close()
+
+		awaitOwner(t, claim1, "1", false)
+		exists, err = conn1.Peer("org.test.Bus").Exists(context.Background())
+		if err != nil {
+			t.Fatalf("conn1.Peer.Exists failed: %v", err)
+		}
+		if exists {
+			t.Fatal("org.test.Bus still exists, want no owner")
+		}
+	})
+}
+
+type logWriter struct {
+	lineCount chan int
+	cnt       int
+	t         *testing.T
+	buf       bytes.Buffer
+}
+
+func newLogWriter(t *testing.T) *logWriter {
+	return &logWriter{
+		lineCount: make(chan int, 1),
+		t:         t,
+	}
+}
+
+func (l *logWriter) Write(bs []byte) (int, error) {
+	l.buf.Write(bs)
+	for range bytes.Count(l.buf.Bytes(), []byte("\n")) {
+		ln, err := l.buf.ReadString('\n')
+		if err != nil {
+			return 0, err
+		}
+		l.t.Log(strings.TrimRight(ln, "\n"))
+		l.cnt++
+		select {
+		case l.lineCount <- l.cnt:
+		case <-l.lineCount:
+			l.lineCount <- l.cnt
+		}
+	}
+	return len(bs), nil
+}
+
+func (l *logWriter) Flush() {
+	for {
+		ln, err := l.buf.ReadString('\n')
+		if len(ln) > 0 {
+			l.t.Log(strings.TrimRight(ln, "\n"))
+		}
+		if errors.Is(err, io.EOF) {
+			return
+		} else if err != nil {
+			l.t.Errorf("flushing logWriter: %v", err)
+			return
+		}
+	}
+}
+
+func (l *logWriter) WaitForLines(want int) {
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case cnt := <-l.lineCount:
+			if cnt >= want {
+				return
+			}
+		case <-timeout:
+			l.t.Fatalf("timed out waiting for %d lines of dbus-monitor output", want)
+		}
+	}
 }
