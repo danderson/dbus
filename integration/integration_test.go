@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -22,248 +21,164 @@ import (
 //go:embed dbus.config
 var dbusConfig string
 
-func runTestDBus(t *testing.T) (mkConn func() *dbus.Conn, stop func()) {
-	tmp := t.TempDir()
+// debugging tests, and the bus monitor output is too much? Turn it
+// off temporarily here.
+//
+// Note that to help pick through the test logs, all dbus-monitor
+// output is logged through the same codepath, such that all
+// dbus-monitor log entries have the same distinctive source line.
+const suppressBusMonitor = false
 
-	svc, err := filepath.Abs("./services")
+func TestBus(t *testing.T) {
+	mkConn, stop := runTestDBus(t)
+	defer stop()
+
+	conn := mkConn()
+	defer conn.Close()
+
+	if got, want := conn.LocalName(), ":1.1"; got != want {
+		t.Errorf("unexpected bus name for conn, got %s want %s", got, want)
+	}
+
+	peers, err := conn.Peers(context.Background())
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	cfgPath := filepath.Join(tmp, "bus.config")
-	cfg := strings.Replace(dbusConfig, "__SERVICEDIR__", svc, -1)
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	sock := filepath.Join(tmp, "bus.sock")
-	cmd := exec.Command("dbus-daemon", "--config-file="+cfgPath, "--nofork", "--nopidfile", "--nosyslog", "--address=unix:path="+sock)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	stopCh := make(chan struct{})
-	stoppedCh := make(chan struct{})
-	go func() {
-		defer close(stoppedCh)
-		err := cmd.Wait()
-		select {
-		case <-stopCh:
-		default:
-			panic(fmt.Errorf("dbus stopped prematurely: %w", err))
+		t.Errorf("Peers() failed: %v", err)
+	} else {
+		wantPeers := []dbus.Peer{
+			conn.Peer(":1.1"),
+			conn.Peer("org.freedesktop.DBus"),
 		}
-	}()
-
-	for {
-		if _, err := os.Stat(sock); err == nil {
-			break
-		} else if errors.Is(err, fs.ErrNotExist) {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		} else if err != nil {
-			t.Fatalf("waiting for bus socket: %v", err)
+		slices.SortFunc(peers, dbus.Peer.Compare)
+		got := fmt.Sprint(peers)
+		want := fmt.Sprint(wantPeers)
+		if got != want {
+			t.Errorf("Peers() wrong result:\n  got: %s\n want: %s", got, want)
+		}
+		if testing.Verbose() {
+			t.Logf("Peers() = %s", got)
 		}
 	}
 
-	stoppedMonCh := make(chan struct{})
-	// Only start the monitor once the bus is running.
-	mon := exec.Command("dbus-monitor", "--address", "unix:path="+sock)
-	lw := newLogWriter(t)
-	mon.Stdout = lw
-	mon.Stderr = lw
-	if err := mon.Start(); err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		defer close(stoppedMonCh)
-		err := mon.Wait()
-		select {
-		case <-stopCh:
-		default:
-			panic(fmt.Errorf("dbus-monitor stopped prematurely: %w", err))
+	peers, err = conn.ActivatablePeers(context.Background())
+	t.Log(peers)
+	if err != nil {
+		t.Errorf("Peers() failed: %v", err)
+	} else {
+		//if len(peers) != 2 {
+		wantPeers := []dbus.Peer{
+			conn.Peer("org.freedesktop.DBus"),
+			conn.Peer("org.test.Activated"),
 		}
-		lw.Flush()
-	}()
-	// dbus-monitor starts by emitting 4 log lines that reflect
-	// its own joining and leaving the bus.
-	lw.WaitForLines(4)
+		slices.SortFunc(peers, dbus.Peer.Compare)
+		got := fmt.Sprint(peers)
+		want := fmt.Sprint(wantPeers)
+		if got != want {
+			t.Errorf("ActivatablePeers() wrong result:\n  got: %s\n want: %s", got, want)
+		}
+		if testing.Verbose() {
+			t.Logf("ActivatablePeers() = %s", got)
+		}
+	}
 
-	mkConn = func() *dbus.Conn {
-		ret, err := dbus.Dial(context.Background(), sock)
-		if err != nil {
-			panic(fmt.Errorf("failed to connect to test bus: %w", err))
-		}
-		return ret
+	id, err := conn.BusID(context.Background())
+	if err != nil {
+		t.Errorf("BusID() failed: %v", err)
+	} else if id == "" {
+		t.Error("BusID() is empty")
+	} else if testing.Verbose() {
+		t.Logf("BusID() = %s", id)
 	}
-	stop = func() {
-		close(stopCh)
-		cmd.Process.Kill()
-		mon.Process.Kill()
-		<-stoppedCh
-		<-stoppedMonCh
+
+	features, err := conn.Features(context.Background())
+	if err != nil {
+		t.Errorf("Features() failed: %v", err)
+	} else if !slices.Contains(features, "HeaderFiltering") {
+		t.Errorf("Features() is missing HeaderFiltering, got %v", features)
+	} else if testing.Verbose() {
+		t.Logf("Features() = %v", features)
 	}
-	return mkConn, stop
 }
 
-func TestIntegration(t *testing.T) {
-	t.Run("Peers", func(t *testing.T) {
-		mkConn, stop := runTestDBus(t)
-		defer stop()
+func TestPeer(t *testing.T) {
+	mkConn, stop := runTestDBus(t)
+	defer stop()
 
-		conn := mkConn()
-		defer conn.Close()
+	conn := mkConn()
+	defer conn.Close()
 
-		if got, want := conn.LocalName(), ":1.1"; got != want {
-			t.Errorf("unexpected bus name for conn, got %s want %s", got, want)
-		}
+	bus := conn.Peer("org.freedesktop.DBus")
+	if got, want := bus.Name(), "org.freedesktop.DBus"; got != want {
+		t.Errorf("Peer.Name() is wrong, got %q want %q", got, want)
+	}
+	if bus.IsUniqueName() {
+		t.Error("IsUniqueName() true for bus peer, want false")
+	}
+	if err := bus.Ping(context.Background()); err != nil {
+		t.Errorf("bus.Ping() failed: %v", err)
+	}
 
-		peers, err := conn.Peers(context.Background())
-		if err != nil {
-			t.Errorf("Peers() failed: %v", err)
-		} else {
-			wantPeers := []dbus.Peer{
-				conn.Peer(":1.1"),
-				conn.Peer("org.freedesktop.DBus"),
-			}
-			slices.SortFunc(peers, dbus.Peer.Compare)
-			got := fmt.Sprint(peers)
-			want := fmt.Sprint(wantPeers)
-			if got != want {
-				t.Errorf("Peers() wrong result:\n  got: %s\n want: %s", got, want)
-			}
-			if testing.Verbose() {
-				t.Logf("Peers() = %s", got)
-			}
-		}
-	})
+	creds, err := bus.Identity(context.Background())
+	if err != nil {
+		t.Errorf("bus.Identity() failed: %v", err)
+	} else if creds.UID == nil {
+		t.Error("bus.Identity() has nil UID")
+	} else if creds.PID == nil {
+		t.Error("bus.Identity() has nil PID")
+	}
 
-	t.Run("ActivatablePeers", func(t *testing.T) {
-		mkConn, stop := runTestDBus(t)
-		defer stop()
+	//lint:ignore SA1019 testing deprecated method
+	uid, err := bus.UID(context.Background())
+	if err != nil {
+		t.Errorf("bus.UID() failed: %v", err)
+	} else if uid != *creds.UID {
+		t.Errorf("bus.Identity().UID = %d, but bus.UID() = %d", *creds.UID, uid)
+	} else if testing.Verbose() {
+		t.Logf("bus.UID() = %d", uid)
+	}
 
-		conn := mkConn()
-		defer conn.Close()
+	//lint:ignore SA1019 testing deprecated method
+	pid, err := bus.PID(context.Background())
+	if err != nil {
+		t.Errorf("bus.PID() failed: %v", err)
+	} else if pid != *creds.PID {
+		t.Errorf("bus.Identity().PID = %d, but bus.PID() = %d", *creds.PID, pid)
+	} else if testing.Verbose() {
+		t.Logf("bus.PID() = %d", pid)
+	}
 
-		peers, err := conn.ActivatablePeers(context.Background())
-		t.Log(peers)
-		if err != nil {
-			t.Errorf("Peers() failed: %v", err)
-		} else {
-			//if len(peers) != 2 {
-			wantPeers := []dbus.Peer{
-				conn.Peer("org.freedesktop.DBus"),
-				conn.Peer("org.test.Activated"),
-			}
-			slices.SortFunc(peers, dbus.Peer.Compare)
-			got := fmt.Sprint(peers)
-			want := fmt.Sprint(wantPeers)
-			if got != want {
-				t.Errorf("ActivatablePeers() wrong result:\n  got: %s\n want: %s", got, want)
-			}
-			if testing.Verbose() {
-				t.Logf("ActivatablePeers() = %s", got)
-			}
-		}
-	})
+	exists, err := bus.Exists(context.Background())
+	if err != nil {
+		t.Errorf("bus.Exists() failed: %v", err)
+	} else if !exists {
+		t.Error("bus.Exists() is false but I'm talking to it!")
+	}
 
-	t.Run("BusID", func(t *testing.T) {
-		mkConn, stop := runTestDBus(t)
-		defer stop()
+	owner, err := bus.Owner(context.Background())
+	if err != nil {
+		t.Errorf("bus.Owner() failed: %v", err)
+	} else if got, want := owner.Name(), "org.freedesktop.DBus"; got != want {
+		t.Errorf("bus.Owner() = %q, want %q", got, want)
+	} else if testing.Verbose() {
+		t.Logf("bus.Owner() = %s", owner)
+	}
+}
 
-		conn := mkConn()
-		defer conn.Close()
+func TestObject(t *testing.T) {
+	mkConn, stop := runTestDBus(t)
+	defer stop()
 
-		id, err := conn.BusID(context.Background())
-		if err != nil {
-			t.Errorf("BusID() failed: %v", err)
-		} else if id == "" {
-			t.Error("BusID() is empty")
-		} else if testing.Verbose() {
-			t.Logf("BusID() = %s", id)
-		}
-	})
+	conn := mkConn()
+	defer conn.Close()
 
-	t.Run("Features", func(t *testing.T) {
-		mkConn, stop := runTestDBus(t)
-		defer stop()
-
-		conn := mkConn()
-		defer conn.Close()
-
-		features, err := conn.Features(context.Background())
-		if err != nil {
-			t.Errorf("Features() failed: %v", err)
-		} else if !slices.Contains(features, "HeaderFiltering") {
-			t.Errorf("Features() is missing HeaderFiltering, got %v", features)
-		} else if testing.Verbose() {
-			t.Logf("Features() = %v", features)
-		}
-	})
-
-	t.Run("Peer", func(t *testing.T) {
-		mkConn, stop := runTestDBus(t)
-		defer stop()
-
-		conn := mkConn()
-		defer conn.Close()
-
-		bus := conn.Peer("org.freedesktop.DBus")
-		if got, want := bus.Name(), "org.freedesktop.DBus"; got != want {
-			t.Errorf("Peer.Name() is wrong, got %q want %q", got, want)
-		}
-		if bus.IsUniqueName() {
-			t.Error("IsUniqueName() true for bus peer, want false")
-		}
-		if err := bus.Ping(context.Background()); err != nil {
-			t.Errorf("bus.Ping() failed: %v", err)
-		}
-
-		creds, err := bus.Identity(context.Background())
-		if err != nil {
-			t.Errorf("bus.Identity() failed: %v", err)
-		} else if creds.UID == nil {
-			t.Error("bus.Identity() has nil UID")
-		} else if creds.PID == nil {
-			t.Error("bus.Identity() has nil PID")
-		}
-
-		//lint:ignore SA1019 testing deprecated method
-		uid, err := bus.UID(context.Background())
-		if err != nil {
-			t.Errorf("bus.UID() failed: %v", err)
-		} else if uid != *creds.UID {
-			t.Errorf("bus.Identity().UID = %d, but bus.UID() = %d", *creds.UID, uid)
-		} else if testing.Verbose() {
-			t.Logf("bus.UID() = %d", uid)
-		}
-
-		//lint:ignore SA1019 testing deprecated method
-		pid, err := bus.PID(context.Background())
-		if err != nil {
-			t.Errorf("bus.PID() failed: %v", err)
-		} else if pid != *creds.PID {
-			t.Errorf("bus.Identity().PID = %d, but bus.PID() = %d", *creds.PID, pid)
-		} else if testing.Verbose() {
-			t.Logf("bus.PID() = %d", pid)
-		}
-
-		exists, err := bus.Exists(context.Background())
-		if err != nil {
-			t.Errorf("bus.Exists() failed: %v", err)
-		} else if !exists {
-			t.Error("bus.Exists() is false but I'm talking to it!")
-		}
-
-		owner, err := bus.Owner(context.Background())
-		if err != nil {
-			t.Errorf("bus.Owner() failed: %v", err)
-		} else if got, want := owner.Name(), "org.freedesktop.DBus"; got != want {
-			t.Errorf("bus.Owner() = %q, want %q", got, want)
-		} else if testing.Verbose() {
-			t.Logf("bus.Owner() = %s", owner)
-		}
-	})
+	o := conn.Peer("org.freedesktop.DBus").Object("/org/freedesktop/DBus")
+	desc, err := o.Introspect(context.Background())
+	if err != nil {
+		t.Fatalf("introspecting DBus: %v", err)
+	}
+	if len(desc.Interfaces) < 1 {
+		t.Fatal("no interfaces found on DBus object")
+	}
+	t.Log(len(desc.Interfaces))
 }
 
 func awaitOwner(t *testing.T, claim *dbus.Claim, claimName string, wantOwner bool) {
@@ -550,63 +465,155 @@ func TestClaim(t *testing.T) {
 	})
 }
 
+func runTestDBus(t *testing.T) (mkConn func() *dbus.Conn, stop func()) {
+	tmp := t.TempDir()
+
+	svc, err := filepath.Abs("./services")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(tmp, "bus.config")
+	cfg := strings.Replace(dbusConfig, "__SERVICEDIR__", svc, -1)
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	sock := filepath.Join(tmp, "bus.sock")
+	cmd := exec.Command("dbus-daemon", "--config-file="+cfgPath, "--nofork", "--nopidfile", "--nosyslog", "--address=unix:path="+sock)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	stopCh := make(chan struct{})
+	stoppedCh := make(chan struct{})
+	go func() {
+		defer close(stoppedCh)
+		err := cmd.Wait()
+		select {
+		case <-stopCh:
+		default:
+			panic(fmt.Errorf("dbus stopped prematurely: %w", err))
+		}
+	}()
+
+	for {
+		if _, err := os.Stat(sock); err == nil {
+			break
+		} else if errors.Is(err, fs.ErrNotExist) {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		} else if err != nil {
+			t.Fatalf("waiting for bus socket: %v", err)
+		}
+	}
+
+	stoppedMonCh := make(chan struct{})
+	// Only start the monitor once the bus is running.
+	mon := exec.Command("dbus-monitor", "--address", "unix:path="+sock)
+	lw := newLogWriter(t)
+	mon.Stdout = lw
+	mon.Stderr = lw
+	if err := mon.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer close(stoppedMonCh)
+		err := mon.Wait()
+		select {
+		case <-stopCh:
+		default:
+			panic(fmt.Errorf("dbus-monitor stopped prematurely: %w", err))
+		}
+		lw.Flush()
+	}()
+	// dbus-monitor starts by emitting entries that reflect its own
+	// joining then leaving the bus.
+	lw.WaitForFirstLine()
+
+	mkConn = func() *dbus.Conn {
+		ret, err := dbus.Dial(context.Background(), sock)
+		if err != nil {
+			panic(fmt.Errorf("failed to connect to test bus: %w", err))
+		}
+		return ret
+	}
+	stop = func() {
+		close(stopCh)
+		cmd.Process.Kill()
+		mon.Process.Kill()
+		<-stoppedCh
+		<-stoppedMonCh
+	}
+	return mkConn, stop
+}
+
 type logWriter struct {
-	lineCount chan int
-	cnt       int
-	t         *testing.T
-	buf       bytes.Buffer
+	output chan struct{}
+	t      *testing.T
+	buf    bytes.Buffer
 }
 
 func newLogWriter(t *testing.T) *logWriter {
 	return &logWriter{
-		lineCount: make(chan int, 1),
-		t:         t,
+		output: make(chan struct{}, 1),
+		t:      t,
 	}
+}
+
+func (l *logWriter) out(s string) {
+	if suppressBusMonitor {
+		return
+	}
+	l.t.Log(s)
+}
+
+func (l *logWriter) Flush() {
+	l.flushComplete()
+	l.out(l.buf.String())
+	l.buf.Reset()
 }
 
 func (l *logWriter) Write(bs []byte) (int, error) {
 	l.buf.Write(bs)
-	for range bytes.Count(l.buf.Bytes(), []byte("\n")) {
-		ln, err := l.buf.ReadString('\n')
-		if err != nil {
-			return 0, err
-		}
-		l.t.Log(strings.TrimRight(ln, "\n"))
-		l.cnt++
-		select {
-		case l.lineCount <- l.cnt:
-		case <-l.lineCount:
-			l.lineCount <- l.cnt
-		}
-	}
+	l.flushComplete()
 	return len(bs), nil
 }
 
-func (l *logWriter) Flush() {
+func (l *logWriter) flushComplete() {
+	bs := l.buf.Bytes()
+	total := 0
 	for {
-		ln, err := l.buf.ReadString('\n')
-		if len(ln) > 0 {
-			l.t.Log(strings.TrimRight(ln, "\n"))
-		}
-		if errors.Is(err, io.EOF) {
-			return
-		} else if err != nil {
-			l.t.Errorf("flushing logWriter: %v", err)
+		i := bytes.IndexByte(bs, '\n')
+		if i == -1 {
 			return
 		}
+		total += i
+		bs = bs[i+1:]
+		if !bytes.HasPrefix(bs, []byte("method ")) && !bytes.HasPrefix(bs, []byte("signal ")) && !bytes.HasPrefix(bs, []byte("error ")) {
+			total++
+			continue
+		}
+
+		out := l.buf.Next(total)
+		l.out(string(out))
+		l.buf.Next(1)
+		select {
+		case l.output <- struct{}{}:
+		default:
+		}
+		total = 0
+		bs = l.buf.Bytes()
 	}
 }
 
-func (l *logWriter) WaitForLines(want int) {
+func (l *logWriter) WaitForFirstLine() {
 	timeout := time.After(2 * time.Second)
-	for {
-		select {
-		case cnt := <-l.lineCount:
-			if cnt >= want {
-				return
-			}
-		case <-timeout:
-			l.t.Fatalf("timed out waiting for %d lines of dbus-monitor output", want)
-		}
+	select {
+	case <-l.output:
+		return
+	case <-timeout:
+		l.t.Fatalf("timed out waiting for dbus-monitor output")
 	}
 }
