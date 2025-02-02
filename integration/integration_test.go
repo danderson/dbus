@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -179,6 +180,80 @@ func TestObject(t *testing.T) {
 		t.Fatal("no interfaces found on DBus object")
 	}
 	t.Log(len(desc.Interfaces))
+}
+
+func TestInterface(t *testing.T) {
+	mkConn, stop := runTestDBus(t)
+	defer stop()
+
+	conn := mkConn()
+	defer conn.Close()
+
+	// Call with no args, one retval
+	bus := conn.Peer("org.freedesktop.DBus").Object("/org/freedesktop/DBus").Interface("org.freedesktop.DBus")
+	var id string
+	if err := bus.Call(context.Background(), "GetId", nil, &id); err != nil {
+		t.Fatalf("bus.GetId failed: %v", err)
+	}
+	if len(id) == 0 {
+		t.Fatal("bus.GetId got empty ID")
+	}
+
+	// Call with an arg, no retval
+	if err := bus.Call(context.Background(), "AddMatch", "type='signal'", nil); err != nil {
+		t.Fatalf("bus.AddMatch failed: %v", err)
+	}
+
+	// Call with arg and retval
+	req := struct{ A, B string }{
+		"org.freedesktop.DBus",
+		"Features",
+	}
+	var resp any
+	err := bus.Object().Interface("org.freedesktop.DBus.Properties").Call(context.Background(), "Get", req, &resp)
+	if err != nil {
+		t.Fatalf("bus.GetProperty failed: %v", err)
+	}
+	feats, ok := resp.([]string)
+	if !ok {
+		t.Fatalf("unexpected response %v", resp)
+	}
+	if len(feats) == 0 {
+		t.Fatal("bus has no features")
+	}
+
+	if err := bus.OneWay(context.Background(), "GetId", nil); err != nil {
+		t.Fatalf("bus.OneWay failed: %v", err)
+	}
+
+	var feats2 []string
+	if err := bus.GetProperty(context.Background(), "Features", &feats2); err != nil {
+		t.Fatalf("bus.GetProperty(Features) failed: %v", err)
+	}
+
+	if !slices.Equal(feats, feats2) {
+		t.Fatalf("bus.GetProperty output differs from manual call:\n  got: %v\n want: %v", feats2, feats)
+	}
+
+	var resp2 any
+	if err := bus.GetProperty(context.Background(), "Features", &resp2); err != nil {
+		t.Fatalf("bus.GetProperty(Features) failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(resp, resp2) {
+		t.Fatalf("bus.GetProperty output to any differs from manual call:\n  got: %v\n want: %v", resp2, resp)
+	}
+
+	props, err := bus.GetAllProperties(context.Background())
+	if err != nil {
+		t.Fatalf("bus.GetAllProperties failed: %v", err)
+	}
+	if props["Features"] == nil {
+		t.Fatal("bus.GetAllProperties did not return Features")
+	}
+	if props["Interfaces"] == nil {
+		t.Fatal("bus.GetAllProperties did not return Interfaces")
+	}
 }
 
 func awaitOwner(t *testing.T, claim *dbus.Claim, claimName string, wantOwner bool) {
