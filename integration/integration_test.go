@@ -20,7 +20,7 @@ import (
 //go:embed dbus.config
 var dbusConfig string
 
-func runTestDBus(t *testing.T) (path string, stop func()) {
+func runTestDBus(t *testing.T) (mkConn func() *dbus.Conn, stop func()) {
 	tmp := t.TempDir()
 
 	svc, err := filepath.Abs("./services")
@@ -42,7 +42,9 @@ func runTestDBus(t *testing.T) (path string, stop func()) {
 		t.Fatal(err)
 	}
 	stopCh := make(chan struct{})
+	stoppedCh := make(chan struct{})
 	go func() {
+		defer close(stoppedCh)
 		err := cmd.Wait()
 		select {
 		case <-stopCh:
@@ -52,10 +54,19 @@ func runTestDBus(t *testing.T) (path string, stop func()) {
 	}()
 	for {
 		if _, err := os.Stat(sock); err == nil {
-			return sock, func() {
+			mkConn := func() *dbus.Conn {
+				ret, err := dbus.Dial(context.Background(), sock)
+				if err != nil {
+					panic(fmt.Errorf("failed to connect to test bus: %w", err))
+				}
+				return ret
+			}
+			stop := func() {
 				close(stopCh)
 				cmd.Process.Kill()
+				<-stoppedCh
 			}
+			return mkConn, stop
 		} else if errors.Is(err, fs.ErrNotExist) {
 			time.Sleep(10 * time.Millisecond)
 			continue
@@ -66,13 +77,10 @@ func runTestDBus(t *testing.T) (path string, stop func()) {
 }
 
 func TestIntegration(t *testing.T) {
-	sock, stop := runTestDBus(t)
+	mkConn, stop := runTestDBus(t)
 	defer stop()
 
-	conn, err := dbus.Dial(context.Background(), sock)
-	if err != nil {
-		t.Fatalf("connecting to test but: %v", err)
-	}
+	conn := mkConn()
 	defer conn.Close()
 
 	if got, want := conn.LocalName(), ":1.0"; got != want {
@@ -238,10 +246,9 @@ func TestIntegration(t *testing.T) {
 			t.Logf("testPeer.Owner() = %s", owner)
 		}
 
-		conn2, err := dbus.Dial(context.Background(), sock)
-		if err != nil {
-			t.Fatalf("failed to connect to bus a second time: %v", err)
-		}
+		conn2 := mkConn()
+		defer conn2.Close()
+
 		claim2, err := conn2.Claim("org.test.Bus", dbus.ClaimOptions{})
 		if err != nil {
 			t.Errorf("conn2.Claim() failed: %v", err)
