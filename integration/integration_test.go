@@ -107,17 +107,17 @@ func runTestDBus(t *testing.T) (mkConn func() *dbus.Conn, stop func()) {
 }
 
 func TestIntegration(t *testing.T) {
-	mkConn, stop := runTestDBus(t)
-	defer stop()
-
-	conn := mkConn()
-	defer conn.Close()
-
-	if got, want := conn.LocalName(), ":1.1"; got != want {
-		t.Errorf("unexpected bus name for conn, got %s want %s", got, want)
-	}
-
 	t.Run("Peers", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn := mkConn()
+		defer conn.Close()
+
+		if got, want := conn.LocalName(), ":1.1"; got != want {
+			t.Errorf("unexpected bus name for conn, got %s want %s", got, want)
+		}
+
 		peers, err := conn.Peers(context.Background())
 		if err != nil {
 			t.Errorf("Peers() failed: %v", err)
@@ -139,6 +139,12 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("ActivatablePeers", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn := mkConn()
+		defer conn.Close()
+
 		peers, err := conn.ActivatablePeers(context.Background())
 		t.Log(peers)
 		if err != nil {
@@ -162,6 +168,12 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("BusID", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn := mkConn()
+		defer conn.Close()
+
 		id, err := conn.BusID(context.Background())
 		if err != nil {
 			t.Errorf("BusID() failed: %v", err)
@@ -173,6 +185,12 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Features", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn := mkConn()
+		defer conn.Close()
+
 		features, err := conn.Features(context.Background())
 		if err != nil {
 			t.Errorf("Features() failed: %v", err)
@@ -184,6 +202,12 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Peer", func(t *testing.T) {
+		mkConn, stop := runTestDBus(t)
+		defer stop()
+
+		conn := mkConn()
+		defer conn.Close()
+
 		bus := conn.Peer("org.freedesktop.DBus")
 		if got, want := bus.Name(), "org.freedesktop.DBus"; got != want {
 			t.Errorf("Peer.Name() is wrong, got %q want %q", got, want)
