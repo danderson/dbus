@@ -26,14 +26,6 @@ func (b *byteOrder) UnmarshalDBus(ctx context.Context, d *fragments.Decoder) err
 	return nil
 }
 
-func (b *byteOrder) Order() fragments.ByteOrder {
-	if *b {
-		return fragments.BigEndian
-	} else {
-		return fragments.LittleEndian
-	}
-}
-
 // msgType is the type of a DBus message.
 type msgType byte
 
@@ -166,12 +158,4 @@ func (h *header) Valid() error {
 // WantReply reports whether this message requires a response.
 func (h *header) WantReply() bool {
 	return h.Type == msgTypeCall && h.Flags&0x1 == 0
-}
-
-// CanInteract reports whether the message's sender is prepared to
-// wait for an interactive authorization prompt, if the sender lacks
-// the necessary privileges for the message, and the bus or
-// destination wish to trigger an interactive prompt.
-func (h header) CanInteract() bool {
-	return h.Type == msgTypeCall && h.Flags&0x4 != 0
 }
