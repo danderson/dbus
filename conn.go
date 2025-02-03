@@ -18,7 +18,7 @@ import (
 
 	"github.com/creachadair/mds/mapset"
 	"github.com/danderson/dbus/fragments"
-	"github.com/danderson/dbus/transport"
+	"github.com/danderson/dbus/internal/transport"
 )
 
 // Conn is a DBus connection.
