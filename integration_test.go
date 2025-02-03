@@ -209,19 +209,21 @@ func TestInterface(t *testing.T) {
 		t.Fatal("bus has no features")
 	}
 
+	// one-way call
 	if err := busPeer.OneWay(context.Background(), "GetId", nil); err != nil {
 		t.Fatalf("busPeer.OneWay failed: %v", err)
 	}
 
+	// Get property into type
 	var feats2 []string
 	if err := busPeer.GetProperty(context.Background(), "Features", &feats2); err != nil {
 		t.Fatalf("busPeer.GetProperty(Features) failed: %v", err)
 	}
-
 	if !slices.Equal(feats, feats2) {
 		t.Fatalf("busPeer.GetProperty output differs from manual call:\n  got: %v\n want: %v", feats2, feats)
 	}
 
+	// Get property into any
 	var resp2 any
 	if err := busPeer.GetProperty(context.Background(), "Features", &resp2); err != nil {
 		t.Fatalf("busPeer.GetProperty(Features) failed: %v", err)
@@ -231,6 +233,7 @@ func TestInterface(t *testing.T) {
 		t.Fatalf("busPeer.GetProperty output to any differs from manual call:\n  got: %v\n want: %v", resp2, resp)
 	}
 
+	// Get all properties
 	props, err := busPeer.GetAllProperties(context.Background())
 	if err != nil {
 		t.Fatalf("busPeer.GetAllProperties failed: %v", err)
@@ -240,6 +243,19 @@ func TestInterface(t *testing.T) {
 	}
 	if props["Interfaces"] == nil {
 		t.Fatal("busPeer.GetAllProperties did not return Interfaces")
+	}
+
+	// Failed call
+	err = busPeer.Call(context.Background(), "FlumpoTron", nil, nil)
+	if err == nil {
+		t.Fatalf("busPeer.FlumpoTron (non-existent method) succeeded")
+	}
+
+	// Failed property get
+	var jumkle any
+	err = busPeer.GetProperty(context.Background(), "JumkleClint", &jumkle)
+	if err == nil {
+		t.Fatalf("busPeer.GetProperty of non-existent property succeeded")
 	}
 }
 
