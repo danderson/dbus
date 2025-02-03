@@ -1,0 +1,28 @@
+
+type Monitoring struct{ iface dbus.Interface }
+
+// New returns an interface to TODO
+func New(conn *dbus.Conn) Monitoring {
+	obj := conn.Peer("TODO").Object("TODO")
+	return Interface(obj)
+}
+
+// Interface returns a Monitoring on the given object.
+func Interface(obj dbus.Object) Monitoring {
+	return Monitoring{
+		iface: obj.Interface("org.freedesktop.DBus.Monitoring"),
+	}
+}
+
+func (iface Monitoring) BecomeMonitor(ctx context.Context, arg0 []string, arg1 uint32) error {
+	req := struct {
+		Arg0 []string
+		Arg1 uint32
+	}{
+		Arg0: arg0,
+		Arg1: arg1,
+	}
+	err := iface.iface.Call(ctx, "BecomeMonitor", req, nil)
+	return err
+}
+

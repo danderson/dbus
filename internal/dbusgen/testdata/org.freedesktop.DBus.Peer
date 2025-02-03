@@ -1,0 +1,26 @@
+
+type Peer struct{ iface dbus.Interface }
+
+// New returns an interface to TODO
+func New(conn *dbus.Conn) Peer {
+	obj := conn.Peer("TODO").Object("TODO")
+	return Interface(obj)
+}
+
+// Interface returns a Peer on the given object.
+func Interface(obj dbus.Object) Peer {
+	return Peer{
+		iface: obj.Interface("org.freedesktop.DBus.Peer"),
+	}
+}
+
+func (iface Peer) GetMachineId(ctx context.Context) (arg0 string, err error) {
+	err = iface.iface.Call(ctx, "GetMachineId", nil, &arg0)
+	return arg0, err
+}
+
+func (iface Peer) Ping(ctx context.Context) error {
+	err := iface.iface.Call(ctx, "Ping", nil, nil)
+	return err
+}
+

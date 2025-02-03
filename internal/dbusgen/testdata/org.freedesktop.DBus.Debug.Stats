@@ -1,0 +1,31 @@
+
+type Stats struct{ iface dbus.Interface }
+
+// New returns an interface to TODO
+func New(conn *dbus.Conn) Stats {
+	obj := conn.Peer("TODO").Object("TODO")
+	return Interface(obj)
+}
+
+// Interface returns a Stats on the given object.
+func Interface(obj dbus.Object) Stats {
+	return Stats{
+		iface: obj.Interface("org.freedesktop.DBus.Debug.Stats"),
+	}
+}
+
+func (iface Stats) GetAllMatchRules(ctx context.Context) (arg0 map[string][]string, err error) {
+	err = iface.iface.Call(ctx, "GetAllMatchRules", nil, &arg0)
+	return arg0, err
+}
+
+func (iface Stats) GetConnectionStats(ctx context.Context, arg0 string) (arg0 map[string]interface{}, err error) {
+	err = iface.iface.Call(ctx, "GetConnectionStats", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface Stats) GetStats(ctx context.Context) (arg0 map[string]interface{}, err error) {
+	err = iface.iface.Call(ctx, "GetStats", nil, &arg0)
+	return arg0, err
+}
+

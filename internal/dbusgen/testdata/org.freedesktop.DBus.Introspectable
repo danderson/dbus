@@ -1,0 +1,21 @@
+
+type Introspectable struct{ iface dbus.Interface }
+
+// New returns an interface to TODO
+func New(conn *dbus.Conn) Introspectable {
+	obj := conn.Peer("TODO").Object("TODO")
+	return Interface(obj)
+}
+
+// Interface returns a Introspectable on the given object.
+func Interface(obj dbus.Object) Introspectable {
+	return Introspectable{
+		iface: obj.Interface("org.freedesktop.DBus.Introspectable"),
+	}
+}
+
+func (iface Introspectable) Introspect(ctx context.Context) (arg0 string, err error) {
+	err = iface.iface.Call(ctx, "Introspect", nil, &arg0)
+	return arg0, err
+}
+

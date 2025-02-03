@@ -1,0 +1,161 @@
+
+type DBus struct{ iface dbus.Interface }
+
+// New returns an interface to TODO
+func New(conn *dbus.Conn) DBus {
+	obj := conn.Peer("TODO").Object("TODO")
+	return Interface(obj)
+}
+
+// Interface returns a DBus on the given object.
+func Interface(obj dbus.Object) DBus {
+	return DBus{
+		iface: obj.Interface("org.freedesktop.DBus"),
+	}
+}
+
+func (iface DBus) AddMatch(ctx context.Context, arg0 string) error {
+	err := iface.iface.Call(ctx, "AddMatch", arg0, nil)
+	return err
+}
+
+func (iface DBus) GetAdtAuditSessionData(ctx context.Context, arg0 string) (arg0 []uint8, err error) {
+	err = iface.iface.Call(ctx, "GetAdtAuditSessionData", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) GetConnectionCredentials(ctx context.Context, arg0 string) (arg0 map[string]interface{}, err error) {
+	err = iface.iface.Call(ctx, "GetConnectionCredentials", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) GetConnectionSELinuxSecurityContext(ctx context.Context, arg0 string) (arg0 []uint8, err error) {
+	err = iface.iface.Call(ctx, "GetConnectionSELinuxSecurityContext", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) GetConnectionUnixProcessID(ctx context.Context, arg0 string) (arg0 uint32, err error) {
+	err = iface.iface.Call(ctx, "GetConnectionUnixProcessID", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) GetConnectionUnixUser(ctx context.Context, arg0 string) (arg0 uint32, err error) {
+	err = iface.iface.Call(ctx, "GetConnectionUnixUser", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) GetId(ctx context.Context) (arg0 string, err error) {
+	err = iface.iface.Call(ctx, "GetId", nil, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) GetNameOwner(ctx context.Context, arg0 string) (arg0 string, err error) {
+	err = iface.iface.Call(ctx, "GetNameOwner", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) Hello(ctx context.Context) (arg0 string, err error) {
+	err = iface.iface.Call(ctx, "Hello", nil, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) ListActivatableNames(ctx context.Context) (arg0 []string, err error) {
+	err = iface.iface.Call(ctx, "ListActivatableNames", nil, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) ListNames(ctx context.Context) (arg0 []string, err error) {
+	err = iface.iface.Call(ctx, "ListNames", nil, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) ListQueuedOwners(ctx context.Context, arg0 string) (arg0 []string, err error) {
+	err = iface.iface.Call(ctx, "ListQueuedOwners", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) NameHasOwner(ctx context.Context, arg0 string) (arg0 bool, err error) {
+	err = iface.iface.Call(ctx, "NameHasOwner", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) ReleaseName(ctx context.Context, arg0 string) (arg0 uint32, err error) {
+	err = iface.iface.Call(ctx, "ReleaseName", arg0, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) ReloadConfig(ctx context.Context) error {
+	err := iface.iface.Call(ctx, "ReloadConfig", nil, nil)
+	return err
+}
+
+func (iface DBus) RemoveMatch(ctx context.Context, arg0 string) error {
+	err := iface.iface.Call(ctx, "RemoveMatch", arg0, nil)
+	return err
+}
+
+func (iface DBus) RequestName(ctx context.Context, arg0 string, arg1 uint32) (arg0 uint32, err error) {
+	req := struct {
+		Arg0 string
+		Arg1 uint32
+	}{
+		Arg0: arg0,
+		Arg1: arg1,
+	}
+	err = iface.iface.Call(ctx, "RequestName", req, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) StartServiceByName(ctx context.Context, arg0 string, arg1 uint32) (arg0 uint32, err error) {
+	req := struct {
+		Arg0 string
+		Arg1 uint32
+	}{
+		Arg0: arg0,
+		Arg1: arg1,
+	}
+	err = iface.iface.Call(ctx, "StartServiceByName", req, &arg0)
+	return arg0, err
+}
+
+func (iface DBus) UpdateActivationEnvironment(ctx context.Context, arg0 map[string]string) error {
+	err := iface.iface.Call(ctx, "UpdateActivationEnvironment", arg0, nil)
+	return err
+}
+
+// Features returns the value of the property "Features".
+func (iface DBus) Features(ctx context.Context) ([]string, error) {
+	var ret []string
+	err := iface.iface.GetProperty(ctx, "Features", &ret)
+	return ret, err
+}
+
+// Interfaces returns the value of the property "Interfaces".
+func (iface DBus) Interfaces(ctx context.Context) ([]string, error) {
+	var ret []string
+	err := iface.iface.GetProperty(ctx, "Interfaces", &ret)
+	return ret, err
+}
+
+// ActivatableServicesChanged implements the signal org.freedesktop.DBus.ActivatableServicesChanged.
+type ActivatableServicesChanged struct{}
+
+// NameAcquired implements the signal org.freedesktop.DBus.NameAcquired.
+type NameAcquired struct{ Arg0 string }
+
+// NameLost implements the signal org.freedesktop.DBus.NameLost.
+type NameLost struct{ Arg0 string }
+
+// NameOwnerChanged implements the signal org.freedesktop.DBus.NameOwnerChanged.
+type NameOwnerChanged struct {
+	Arg0 string
+	Arg1 string
+	Arg2 string
+}
+
+func init() {
+	dbus.RegisterSignalType[ActivatableServicesChanged]("org.freedesktop.DBus", "ActivatableServicesChanged")
+	dbus.RegisterSignalType[NameAcquired]("org.freedesktop.DBus", "NameAcquired")
+	dbus.RegisterSignalType[NameLost]("org.freedesktop.DBus", "NameLost")
+	dbus.RegisterSignalType[NameOwnerChanged]("org.freedesktop.DBus", "NameOwnerChanged")
+}

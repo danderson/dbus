@@ -54,7 +54,7 @@ func (g *generator) Interface(iface *dbus.InterfaceDescription) error {
 type %[1]s struct { iface dbus.Interface }
 
 // New returns an interface to TODO
-func new(conn *dbus.Conn) %[1]s {
+func New(conn *dbus.Conn) %[1]s {
   obj := conn.Peer("TODO").Object("TODO")
   return Interface(obj)
 }
@@ -65,6 +65,7 @@ func Interface(obj dbus.Object) %[1]s {
     iface: obj.Interface(%[2]q),
   }
 }
+
 `, publicIdentifier(g.iface.Name), iface.Name)
 
 	slices.SortFunc(iface.Methods, func(a, b *dbus.MethodDescription) int {
