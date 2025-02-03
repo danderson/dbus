@@ -21,6 +21,7 @@ import (
 	"github.com/creachadair/mds/slice"
 	"github.com/danderson/dbus"
 	"github.com/danderson/dbus/freedesktop/background"
+	"github.com/danderson/dbus/freedesktop/notifications"
 	"github.com/danderson/dbus/internal/dbusgen"
 	"github.com/kr/pretty"
 )
@@ -178,7 +179,18 @@ generate peer interface`,
 							},
 						},
 					},
-				},
+					{
+						Name:  "notification",
+						Usage: "notification args...",
+						Commands: []*command.C{
+							{
+								Name:  "capabilities",
+								Usage: "capabilities",
+								Help:  "List the capabilities of the notification service",
+								Run:   command.Adapt(runFdoNotificationCaps),
+							},
+						},
+					}},
 			},
 			command.HelpCommand(nil),
 			command.VersionCommand(),
@@ -631,5 +643,23 @@ func runFdoBackgroundList(env *command.Env) error {
 	for _, app := range apps {
 		fmt.Println(app.ID, app.Instance, app.Status)
 	}
+	return nil
+}
+
+func runFdoNotificationCaps(env *command.Env) error {
+	conn, err := busConn(env.Context())
+	if err != nil {
+		return fmt.Errorf("connecting to bus: %w", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(env.Context(), 5*time.Second)
+	defer cancel()
+
+	caps, err := notifications.New(conn).Capabilities(ctx)
+	if err != nil {
+		return fmt.Errorf("listing notification capabilities: %w", err)
+	}
+	fmt.Printf("%#v\n", caps)
 	return nil
 }
