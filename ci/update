@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+TAG=$(date '+%Y-%m-%d')
+
+podman build -t codeberg.org/dbus-go/dbus-ci:$TAG .
+podman push codeberg.org/dbus-go/dbus-ci:$TAG

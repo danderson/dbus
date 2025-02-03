@@ -1,0 +1,9 @@
+on: [push]
+jobs:
+  test:
+    runs-on: codeberg-tiny
+    container: codeberg.org/dbus-go/dbus-ci:2025-02-03
+    steps:
+      - run: git clone https://codeberg.org/dbus-go/dbus $GITHUB_WORKSPACE
+      - run: git checkout $GITHUB_SHA
+      - run: ./test

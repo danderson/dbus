@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -eux
+
+go build ./...
+go test "$@" ./...
